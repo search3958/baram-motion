@@ -1,0 +1,21 @@
+{
+  "" : {
+    "const-values" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary.swiftconstvalues",
+    "dependencies" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary.d",
+    "diagnostics" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary.dia",
+    "emit-module-dependencies" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary-emit-module.dia",
+    "pch" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotion-primary.swiftdeps"
+  },
+  "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/Sources/BaramMotionApp.swift" : {
+    "index-unit-output-path" : "/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotionApp.o",
+    "llvm-bc" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotionApp.bc",
+    "object" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/BaramMotionApp.o"
+  },
+  "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/Sources/ContentView.swift" : {
+    "index-unit-output-path" : "/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/cheontaerang/Documents/GitHub/baram-motion/BaramMotion/.build/out/Intermediates.noindex/BaramMotion.build/Release/BaramMotion-p.build/Objects-normal/arm64/ContentView.o"
+  }
+}

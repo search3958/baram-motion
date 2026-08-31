@@ -1,0 +1,4 @@
+module BaramMotion {
+header "BaramMotion-Swift.h"
+export *
+}
