@@ -1,0 +1,39 @@
+# LICENSE
+
+## Baram Motion License
+
+Copyright (c) 2026 Baram Motion Contributors
+
+### Permissions
+
+- You may use this software for personal, non-commercial purposes.
+- You may modify this software for your own use.
+- You may redistribute this software, provided you include proper attribution.
+
+### Conditions
+
+1. **Attribution**: Any modified or redistributed version of this software must include
+   clear credit to the original authors. The following notice must be included in any
+   distribution or derivative work:
+
+   ```
+   Based on Baram Motion - https://github.com/Kilo-Org/baram-motion
+   ```
+
+2. **Non-Commercial Use Only**: This software may not be sold, sublicensed, or used
+   for any commercial purpose without explicit written permission from the copyright holders.
+
+3. **Attribution in Generated Output**: When this software is used to generate content
+   that is displayed or transmitted (including but not limited to text, images, or data),
+   the output must include a clear mention of the software name "Baram Motion" in a
+   location visible to end users. For English-language responses or outputs, the software
+   name "Baram Motion" must be explicitly stated.
+
+### Disclaimer
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
