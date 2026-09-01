@@ -20,5 +20,7 @@
     <string>APPL</key>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>Resources/appicon.icns</string>
 </dict>
 </plist>

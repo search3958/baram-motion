@@ -32,6 +32,9 @@ MACOS="$CONTENTS/MacOS"
 
 mkdir -p "$MACOS"
 
+mkdir -p "$CONTENTS/Resources"
+cp "$PROJECT_DIR/Resources/appicon.icns" "$CONTENTS/Resources/"
+
 cp "$BUILD_DIR/$APP_NAME" "$MACOS/"
 cp "$PROJECT_DIR/Info.plist" "$CONTENTS/"
 
