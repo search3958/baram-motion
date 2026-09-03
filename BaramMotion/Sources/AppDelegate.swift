@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // コンテンツをタイトルバー領域まで広げる
         window.styleMask.insert(.fullSizeContentView)
 
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
 
         // ---------------------------------------------------------
         // Full Screen
