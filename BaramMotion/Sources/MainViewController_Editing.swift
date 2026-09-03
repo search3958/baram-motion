@@ -27,6 +27,7 @@ extension MainViewController {
         refreshLayerList()
         refreshSelectionAppearance()
         rebuildInspector()
+        refreshKeyframeInspector()
 
         timelineContent.reload(
             layers: timelineProxies,
@@ -372,15 +373,21 @@ extension MainViewController {
         let before =
             captureSnapshot()
 
-        if sender === xField {
-            layer.x = CGFloat(value)
+        let targetFrame = playbackController.currentFrame
+        if !layer.keyframes.isEmpty && layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) == nil {
+            let evaluated = evaluatedTransform(for: layer, frame: targetFrame)
+            layer.keyframes.append(TransformKeyframe(frame: targetFrame, x: evaluated.x, y: evaluated.y, width: evaluated.width, height: evaluated.height))
+            layer.keyframes.sort { $0.frame < $1.frame }
+            NSLog("[Baram Motion] Auto-created transform keyframe at frame %d", targetFrame)
         }
-
-        if sender === yField {
-            layer.y = CGFloat(value)
+        if let keyframeIndex = layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) {
+            if sender === xField { layer.keyframes[keyframeIndex].x = CGFloat(value) }
+            if sender === yField { layer.keyframes[keyframeIndex].y = CGFloat(value) }
+        } else {
+            if sender === xField { layer.x = CGFloat(value) }
+            if sender === yField { layer.y = CGFloat(value) }
+            clampLayerPosition(layer)
         }
-
-        clampLayerPosition(layer)
 
         finishMutation(
             before: before,
@@ -426,23 +433,21 @@ extension MainViewController {
         let before =
             captureSnapshot()
 
-        if sender === widthField {
-            layer.width =
-                CGFloat(value)
+        let targetFrame = playbackController.currentFrame
+        if !layer.keyframes.isEmpty && layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) == nil {
+            let evaluated = evaluatedTransform(for: layer, frame: targetFrame)
+            layer.keyframes.append(TransformKeyframe(frame: targetFrame, x: evaluated.x, y: evaluated.y, width: evaluated.width, height: evaluated.height))
+            layer.keyframes.sort { $0.frame < $1.frame }
+            NSLog("[Baram Motion] Auto-created transform keyframe at frame %d", targetFrame)
         }
-
-        if sender === heightField {
-            layer.height =
-                CGFloat(value)
+        if let keyframeIndex = layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) {
+            if sender === widthField { layer.keyframes[keyframeIndex].width = max(1, CGFloat(value)) }
+            if sender === heightField { layer.keyframes[keyframeIndex].height = max(1, CGFloat(value)) }
+        } else {
+            if sender === widthField { layer.width = CGFloat(value) }
+            if sender === heightField { layer.height = CGFloat(value) }
+            layer.width=max(1,layer.width); layer.height=max(1,layer.height); clampLayerPosition(layer)
         }
-
-        layer.width =
-            max(1, layer.width)
-
-        layer.height =
-            max(1, layer.height)
-
-        clampLayerPosition(layer)
 
         finishMutation(
             before: before,
@@ -585,6 +590,8 @@ extension MainViewController {
         timelineContent.currentFrame = clamped
         timelineContent.needsDisplay = true
         refreshPreview()
+        refreshInspectorValues()
+        refreshKeyframeInspector()
 
         let time = CGFloat(clamped) / playbackFrameRate
         NSLog(
@@ -604,9 +611,7 @@ extension MainViewController {
         }
 
         previewEditingLayerID = id
-        previewEditBeforeSnapshot = [
-            id: LayerSnapshot(layer: layer.copyLayer())
-        ]
+        previewEditBeforeSnapshot = captureSnapshot()
 
         NSLog(
             "[Baram Motion] Preview position edit begin: %@",
@@ -624,12 +629,27 @@ extension MainViewController {
             return
         }
 
-        layer.x += deltaX
-        layer.y -= deltaY
-        clampLayerPosition(layer)
+        if !layer.keyframes.isEmpty && !hasKeyframe(layer) {
+            let evaluated=evaluatedTransform(for:layer,frame:playbackController.currentFrame)
+            layer.keyframes.append(TransformKeyframe(frame:playbackController.currentFrame,x:evaluated.x,y:evaluated.y,width:evaluated.width,height:evaluated.height))
+            layer.keyframes.sort{$0.frame<$1.frame}
+            NSLog("[Baram Motion] Auto-created transform keyframe for preview drag at frame %d", playbackController.currentFrame)
+        }
+        if !layer.keyframes.isEmpty {
+            guard let index=layer.keyframes.firstIndex(where:{$0.frame==playbackController.currentFrame}) else { return }
+            layer.keyframes[index].x += deltaX
+            layer.keyframes[index].y -= deltaY
+            layer.keyframes[index].width=max(1,layer.keyframes[index].width)
+            layer.keyframes[index].height=max(1,layer.keyframes[index].height)
+        } else {
+            layer.x += deltaX
+            layer.y -= deltaY
+            clampLayerPosition(layer)
+        }
 
         refreshPreview()
         refreshInspectorValues()
+        refreshKeyframeInspector()
 
         NSLog(
             "[Baram Motion] Preview position changed %@: x=%.1f y=%.1f",
@@ -674,8 +694,8 @@ extension MainViewController {
 
             result[layer.id] =
                 LayerSnapshot(
-                    layer:
-                        layer.copyLayer()
+                    layer: layer.copyLayer(),
+                    order: layers.firstIndex(where: { $0.id == layer.id }) ?? 0
                 )
         }
 
@@ -771,40 +791,11 @@ extension MainViewController {
             isRestoringUndoState = false
         }
 
-        var restoredLayers:
-            [LayerModel] = []
+        let restoredLayers = snapshots.values
+            .sorted { $0.order < $1.order }
+            .map { $0.layer.copyLayer() }
 
-        // Existing order
-        for originalLayer in layers {
-
-            if let snapshot =
-                snapshots[originalLayer.id] {
-
-                restoredLayers.append(
-                    snapshot.layer.copyLayer()
-                )
-            }
-        }
-
-        // Restored layers which were newly created
-        // in the snapshot.
-        for snapshot in snapshots.values {
-
-            let exists =
-                restoredLayers.contains {
-                    $0.id == snapshot.layer.id
-                }
-
-            if !exists {
-
-                restoredLayers.append(
-                    snapshot.layer.copyLayer()
-                )
-            }
-        }
-
-        layers =
-            restoredLayers
+        layers = restoredLayers
 
         if let selectedLayerID,
            !layers.contains(where: {
@@ -850,7 +841,9 @@ extension MainViewController {
                 left.anchor != right.anchor ||
                 left.startTime != right.startTime ||
                 left.duration != right.duration ||
-                left.isOn != right.isOn {
+                left.isOn != right.isOn ||
+                left.isVisible != right.isVisible ||
+                left.keyframes != right.keyframes {
 
                 return true
             }

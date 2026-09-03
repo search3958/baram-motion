@@ -11,109 +11,88 @@ extension MainViewController {
         refreshPreview()
         refreshLayerList()
         refreshInspectorValues()
+        refreshKeyframeInspector()
         refreshSelectionAppearance()
         updateTimelineSize()
 
-        timelineContent.reload(
-            layers:
-                timelineProxies,
-            selectedLayerID:
-                selectedLayerID
-        )
+        timelineContent.reload(layers: timelineProxies, selectedLayerID: selectedLayerID)
+        timelineLayerPanel?.reload(layers: timelineProxies, selectedLayerID: selectedLayerID)
+        syncTimelineLayerPanelScroll()
 
         refreshPlaybackUI()
     }
 
-    var timelineProxies:
-        [LayerModelProxy] {
-
-        return layers.map {
-            LayerModelProxy(
-                id: $0.id,
-                kindDisplayName:
-                    $0.kind.displayName,
-                name: $0.name,
-                color: $0.color,
-                startTime: $0.startTime,
-                duration: $0.duration
-            )
-        }
-    }
+    var timelineProxies: [LayerModelProxy] { timelineProxiesForUI() }
 
     // MARK: - Preview Rendering
 
-    func refreshPreview() {
-
-        guard previewView != nil else {
-            NSLog("[Baram Motion] ERROR: Preview view is nil.")
-            return
+    func timelineProxiesForUI() -> [LayerModelProxy] {
+        layers.map {
+            LayerModelProxy(id:$0.id, kindDisplayName:$0.kind.displayName, name:$0.name,
+                            color:$0.color, startTime:$0.startTime, duration:$0.duration,
+                            isVisible:$0.isVisible, keyframeFrames:$0.keyframes.map(\.frame))
         }
+    }
 
-        for elementView in previewElementViews.values {
-            elementView.removeFromSuperview()
-        }
-
-        previewElementViews.removeAll(keepingCapacity: true)
-
-        let currentTime = CGFloat(playbackController.currentFrame) / playbackFrameRate
-
-        for layer in layers {
-            let isVisible = layer.startTime <= currentTime && currentTime < layer.startTime + layer.duration
-            guard isVisible else { continue }
-
-            let element = PreviewElementView(
-                layerID: layer.id,
-                kind: layer.kind
-            )
-
-            element.onSelect = { [weak self] id in
-                guard let self else {
-                    NSLog("[Baram Motion] ERROR: MainViewController released before preview selection.")
-                    return
-                }
-                self.selectLayer(id)
-            }
-
-            element.onBeginMove = { [weak self] id in
-                self?.beginPreviewLayerEditing(id)
-            }
-
-            element.onMove = { [weak self] id, delta in
-                self?.movePreviewLayer(
-                    id,
-                    deltaX: delta.x,
-                    deltaY: delta.y
-                )
-            }
-
-            element.onEndMove = { [weak self] id in
-                self?.finishPreviewLayerEditing(id)
-            }
-
-            element.onToggleChanged = { [weak self] id, isOn in
-                self?.setSwitchState(for: id, isOn: isOn)
-            }
-
-            element.backgroundColor = layer.color
-            element.fontSize = layer.fontSize
-            element.text = layer.name
-            element.isOn = layer.isOn
-            element.frame = frameForLayer(layer)
-
-            previewView.addSubview(element)
-            previewElementViews[layer.id] = element
-
-            element.updateAppearance(
-                selected: layer.id == selectedLayerID
-            )
-        }
-
-        NSLog(
-            "[Baram Motion] Preview refreshed at frame %d: visible layers=%d / total=%d",
-            playbackController.currentFrame,
-            previewElementViews.count,
-            layers.count
+    func evaluatedTransform(for layer: LayerModel, frame: Int) -> TransformValue {
+        let keyframes=layer.keyframes.sorted { $0.frame < $1.frame }
+        guard !keyframes.isEmpty else { return layer.currentTransform() }
+        if frame <= keyframes[0].frame { return keyframes[0].value }
+        guard let nextIndex=keyframes.firstIndex(where:{ $0.frame >= frame }) else { return keyframes.last!.value }
+        if keyframes[nextIndex].frame == frame { return keyframes[nextIndex].value }
+        let a=keyframes[nextIndex-1], b=keyframes[nextIndex]
+        let range=CGFloat(b.frame-a.frame)
+        let raw=range > 0 ? CGFloat(frame-a.frame)/range : 0
+        let t=easedProgress(raw, easing:a.easing)
+        return TransformValue(
+            x: lerp(a.x,b.x,t), y: lerp(a.y,b.y,t),
+            width: lerp(a.width,b.width,t), height: lerp(a.height,b.height,t)
         )
+    }
+
+    func easedProgress(_ value: CGFloat, easing: KeyframeEasing) -> CGFloat {
+        let t=max(0,min(1,value))
+        switch easing {
+        case .linear: return t
+        case .easeIn: return t*t
+        case .easeOut: return 1-(1-t)*(1-t)
+        case .easeInOut:
+            return t < 0.5 ? 2*t*t : 1-pow(-2*t+2,2)/2
+        }
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a+(b-a)*t }
+
+    func refreshPreview() {
+        guard let previewView else { NSLog("[Baram Motion] ERROR: Preview view is nil."); return }
+        previewElementViews.values.forEach { $0.removeFromSuperview() }
+        previewElementViews.removeAll(keepingCapacity:true)
+        let frame=playbackController.currentFrame
+        let time=CGFloat(frame)/playbackFrameRate
+
+        // First item in the layer panel is visually on top. Add lower layers first.
+        for layer in layers.reversed() {
+            guard layer.isVisible, layer.startTime <= time, time < layer.startTime+layer.duration else { continue }
+            let element=PreviewElementView(layerID:layer.id, kind:layer.kind)
+            element.backgroundColor=layer.color
+            element.switchTint=Color(nsColor:layer.color)
+            element.fontSize=layer.fontSize
+            element.text=layer.name
+            element.isOn=layer.isOn
+            let transform=evaluatedTransform(for:layer,frame:frame)
+            let displayLayer=layer.copyLayer()
+            displayLayer.x=transform.x; displayLayer.y=transform.y
+            displayLayer.width=transform.width; displayLayer.height=transform.height
+            element.frame=frameForLayer(displayLayer)
+            element.onSelect={ [weak self] id in self?.selectLayer(id) }
+            element.onBeginMove={ [weak self] id in self?.beginPreviewLayerEditing(id) }
+            element.onMove={ [weak self] id,delta in self?.movePreviewLayer(id,deltaX:delta.x,deltaY:delta.y) }
+            element.onEndMove={ [weak self] id in self?.finishPreviewLayerEditing(id) }
+            element.onToggleChanged={ [weak self] id,value in self?.setSwitchState(for:id,isOn:value) }
+            previewView.addSubview(element)
+            previewElementViews[layer.id]=element
+            element.updateAppearance(selected:layer.id==selectedLayerID)
+        }
     }
 
     func refreshSelectionAppearance() {
@@ -154,17 +133,11 @@ extension MainViewController {
                 layer.anchor.rawValue
         )
 
-        xField?.stringValue =
-            formatNumber(layer.x)
-
-        yField?.stringValue =
-            formatNumber(layer.y)
-
-        widthField?.stringValue =
-            formatNumber(layer.width)
-
-        heightField?.stringValue =
-            formatNumber(layer.height)
+        let transform = evaluatedTransform(for: layer, frame: playbackController.currentFrame)
+        xField?.stringValue = formatNumber(transform.x)
+        yField?.stringValue = formatNumber(transform.y)
+        widthField?.stringValue = formatNumber(transform.width)
+        heightField?.stringValue = formatNumber(transform.height)
 
         fontSizeField?.stringValue =
             formatNumber(
@@ -368,267 +341,5 @@ extension MainViewController {
             format: "%.2f",
             Double(value)
         )
-    }
-}
-
-// MARK: - Toolbar Delegate
-
-extension MainViewController:
-    NSToolbarDelegate {
-
-    enum ToolbarItemID {
-
-        static let undo =
-            NSToolbarItem.Identifier(
-                "BaramMotion.Undo"
-            )
-
-        static let redo =
-            NSToolbarItem.Identifier(
-                "BaramMotion.Redo"
-            )
-
-        static let text =
-            NSToolbarItem.Identifier(
-                "BaramMotion.Text"
-            )
-
-        static let rectangle =
-            NSToolbarItem.Identifier(
-                "BaramMotion.Rectangle"
-            )
-
-        static let toggle =
-            NSToolbarItem.Identifier(
-                "BaramMotion.Toggle"
-            )
-
-        static let flexible =
-            NSToolbarItem.Identifier
-                .flexibleSpace
-    }
-
-    func toolbarAllowedItemIdentifiers(
-        _ toolbar: NSToolbar
-    ) -> [
-        NSToolbarItem.Identifier
-    ] {
-
-        return [
-            ToolbarItemID.undo,
-            ToolbarItemID.redo,
-            ToolbarItemID.flexible,
-            ToolbarItemID.text,
-            ToolbarItemID.rectangle,
-            ToolbarItemID.toggle
-        ]
-    }
-
-    func toolbarDefaultItemIdentifiers(
-        _ toolbar: NSToolbar
-    ) -> [
-        NSToolbarItem.Identifier
-    ] {
-
-        return [
-            ToolbarItemID.undo,
-            ToolbarItemID.redo,
-            ToolbarItemID.flexible,
-            ToolbarItemID.text,
-            ToolbarItemID.rectangle,
-            ToolbarItemID.toggle
-        ]
-    }
-
-    func toolbar(
-        _ toolbar: NSToolbar,
-        itemForItemIdentifier
-            itemIdentifier:
-                NSToolbarItem.Identifier,
-        willBeInsertedIntoToolbar flag:
-            Bool
-    ) -> NSToolbarItem? {
-
-        switch itemIdentifier {
-
-        case ToolbarItemID.undo:
-
-            let item =
-                NSToolbarItem(
-                    itemIdentifier:
-                        itemIdentifier
-                )
-
-            item.label =
-                "Undo"
-
-            item.paletteLabel =
-                "Undo"
-
-            item.toolTip =
-                "Undo"
-
-            item.image =
-                NSImage(
-                    systemSymbolName:
-                        "arrow.uturn.backward",
-                    accessibilityDescription:
-                        "Undo"
-                )
-
-            item.target =
-                self
-
-            item.action =
-                #selector(
-                    undoAction
-                )
-
-            return item
-
-        case ToolbarItemID.redo:
-
-            let item =
-                NSToolbarItem(
-                    itemIdentifier:
-                        itemIdentifier
-                )
-
-            item.label =
-                "Redo"
-
-            item.paletteLabel =
-                "Redo"
-
-            item.toolTip =
-                "Redo"
-
-            item.image =
-                NSImage(
-                    systemSymbolName:
-                        "arrow.uturn.forward",
-                    accessibilityDescription:
-                        "Redo"
-                )
-
-            item.target =
-                self
-
-            item.action =
-                #selector(
-                    redoAction
-                )
-
-            return item
-
-        case ToolbarItemID.text:
-
-            let item =
-                NSToolbarItem(
-                    itemIdentifier:
-                        itemIdentifier
-                )
-
-            item.label =
-                "テキスト"
-
-            item.paletteLabel =
-                "テキスト"
-
-            item.toolTip =
-                "テキストを追加"
-
-            item.image =
-                NSImage(
-                    systemSymbolName:
-                        "textformat",
-                    accessibilityDescription:
-                        "Text"
-                )
-
-            item.target =
-                self
-
-            item.action =
-                #selector(
-                    addTextLayer
-                )
-
-            return item
-
-        case ToolbarItemID.rectangle:
-
-            let item =
-                NSToolbarItem(
-                    itemIdentifier:
-                        itemIdentifier
-                )
-
-            item.label =
-                "四角形"
-
-            item.paletteLabel =
-                "四角形"
-
-            item.toolTip =
-                "四角形を追加"
-
-            item.image =
-                NSImage(
-                    systemSymbolName:
-                        "square",
-                    accessibilityDescription:
-                        "Rectangle"
-                )
-
-            item.target =
-                self
-
-            item.action =
-                #selector(
-                    addRectangleLayer
-                )
-
-            return item
-
-        case ToolbarItemID.toggle:
-
-            let item =
-                NSToolbarItem(
-                    itemIdentifier:
-                        itemIdentifier
-                )
-
-            item.label =
-                "Switch"
-
-            item.paletteLabel =
-                "Switch"
-
-            item.toolTip =
-                "Switchを追加"
-
-            item.image =
-                NSImage(
-                    systemSymbolName:
-                        "switch.2",
-                    accessibilityDescription:
-                        "Switch"
-                )
-
-            item.target =
-                self
-
-            item.action =
-                #selector(
-                    addToggleLayer
-                )
-
-            return item
-
-        default:
-
-            return nil
-        }
     }
 }

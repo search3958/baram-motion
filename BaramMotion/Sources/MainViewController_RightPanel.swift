@@ -320,37 +320,8 @@ extension MainViewController {
             )
         }
 
-        // Switch only — native SwiftUI Toggle
-        if layer.kind == .toggle {
-
-            // Capture the layer ID, never the current selection.
-            // This prevents a delayed SwiftUI callback from modifying another layer
-            // after the user changes the selection.
-            let layerID = layer.id
-            let switchControl =
-                NSHostingView(
-                    rootView:
-                        NativeSwitchEditor(
-                            isOn: layer.isOn,
-                            onChanged: { [weak self] isOn in
-                                self?.setSwitchState(
-                                    for: layerID,
-                                    isOn: isOn
-                                )
-                            }
-                        )
-                )
-
-            switchControl.translatesAutoresizingMaskIntoConstraints = false
-            switchControl.setContentHuggingPriority(.required, for: .horizontal)
-
-            stack.addArrangedSubview(
-                makeInspectorRow(
-                    title: "状態",
-                    control: switchControl
-                )
-            )
-        }
+        // Switch state is edited directly in the preview via the native SwiftUI Toggle.
+        // Keep panel 2 focused on playback and numeric transform settings.
 
         // Remove button
         let deleteButton =

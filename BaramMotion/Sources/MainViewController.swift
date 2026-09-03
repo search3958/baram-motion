@@ -19,9 +19,17 @@ final class MainViewController: NSViewController {
 
     var leftPanel: NSView!
     var rightPanel: NSView!
+    var timelineLayerPanel: TimelineLayerPanelView!
 
     var leftContentView: NSView!
     var rightContentView: NSView!
+    var keyframeInspectorStack: NSStackView!
+    var keyframeFrameField: NSTextField?
+    var keyframeEasingPopup: NSPopUpButton?
+    var keyframeXField: NSTextField?
+    var keyframeYField: NSTextField?
+    var keyframeWidthField: NSTextField?
+    var keyframeHeightField: NSTextField?
 
     var layerListScrollView: NSScrollView!
     var layerListStack: NSStackView!
@@ -61,6 +69,9 @@ final class MainViewController: NSViewController {
     var isRestoringUndoState = false
 
     var timelineEditBeforeSnapshot:
+        [UUID: LayerSnapshot] = [:]
+
+    var timelineOrderBeforeSnapshot:
         [UUID: LayerSnapshot] = [:]
 
     // MARK: - Lifecycle
@@ -138,7 +149,7 @@ final class MainViewController: NSViewController {
         // Floating panels
         let left =
             createFloatingPanel(
-                title: "パネル 1"
+                title: "キーフレーム"
             )
 
         leftPanel = left.panel
@@ -155,7 +166,7 @@ final class MainViewController: NSViewController {
         view.addSubview(leftPanel)
         view.addSubview(rightPanel)
 
-        createLeftPanelContent()
+        createKeyframePanelContent()
         createRightPanelContent()
 
         NSLog(

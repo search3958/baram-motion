@@ -96,628 +96,225 @@ extension MainViewController {
     // MARK: - Toolbar
 
     func configureToolbarIfNeeded() {
-
-        guard !toolbarConfigured else {
-            return
-        }
-
-        guard let window = view.window else {
-
-            NSLog(
-                "[Baram Motion] ERROR: Window unavailable for toolbar."
-            )
-
-            return
-        }
-
-        let toolbar =
-            NSToolbar(
-                identifier:
-                    NSToolbar.Identifier(
-                        "BaramMotion.EditorToolbar"
-                    )
-            )
-
+        guard !toolbarConfigured else { return }
+        guard let window = view.window else { NSLog("[Baram Motion] ERROR: Window unavailable for toolbar."); return }
+        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("BaramMotion.EditorToolbar"))
         toolbar.delegate = self
         toolbar.displayMode = .iconAndLabel
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
-
-        if #available(macOS 11.0, *) {
-            toolbar.centeredItemIdentifier = nil
-        }
-
+        if #available(macOS 11.0, *) { toolbar.centeredItemIdentifier = nil }
         window.toolbar = toolbar
-
-        if #available(macOS 11.0, *) {
-            window.toolbarStyle = .unified
-        }
-
+        if #available(macOS 11.0, *) { window.toolbarStyle = .unified }
         toolbarConfigured = true
-
-        NSLog(
-            "[Baram Motion] Editor toolbar configured."
-        )
+        NSLog("[Baram Motion] Editor toolbar configured.")
     }
 
     // MARK: - Preview
 
-    func createPreviewScrollView()
-        -> PreviewScrollView {
-
-        let scrollView =
-            PreviewScrollView()
-
+    func createPreviewScrollView() -> PreviewScrollView {
+        let scrollView = PreviewScrollView()
         scrollView.drawsBackground = false
-
         scrollView.hasHorizontalScroller = true
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-
-        scrollView.horizontalScrollElasticity =
-            .allowed
-
-        scrollView.verticalScrollElasticity =
-            .allowed
-
+        scrollView.horizontalScrollElasticity = .allowed
+        scrollView.verticalScrollElasticity = .allowed
         scrollView.allowsMagnification = true
         scrollView.minMagnification = 0.25
         scrollView.maxMagnification = 4.0
 
-        let canvas =
-            PreviewCanvasView()
-
-        canvas.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: Layout.canvasWidth,
-            height: Layout.canvasHeight
-        )
-
+        let canvas = PreviewCanvasView()
+        canvas.frame = NSRect(x: 0, y: 0, width: Layout.canvasWidth, height: Layout.canvasHeight)
         canvas.wantsLayer = true
-
-        canvas.layer?.backgroundColor =
-            BaramMotionTheme.canvasBackground.cgColor
+        canvas.layer?.backgroundColor = BaramMotionTheme.canvasBackground.cgColor
 
         previewView = NSView()
-
         previewView.wantsLayer = true
-
-        // Preview itself is intentionally black.
-        previewView.layer?.backgroundColor =
-            BaramMotionTheme.previewBackground.cgColor
-
+        previewView.layer?.backgroundColor = BaramMotionTheme.previewBackground.cgColor
         previewView.layer?.cornerRadius = 2
-
-        let previewX =
-            (Layout.canvasWidth
-             - Layout.previewWidth) / 2
-
-        let previewY =
-            (Layout.canvasHeight
-             - Layout.previewHeight) / 2
-
-        previewView.frame = NSRect(
-            x: previewX,
-            y: previewY,
-            width: Layout.previewWidth,
-            height: Layout.previewHeight
-        )
-
+        let previewX = (Layout.canvasWidth - Layout.previewWidth) / 2
+        let previewY = (Layout.canvasHeight - Layout.previewHeight) / 2
+        previewView.frame = NSRect(x: previewX, y: previewY, width: Layout.previewWidth, height: Layout.previewHeight)
         canvas.addSubview(previewView)
 
-        let previewLabel =
-            NSTextField(
-                labelWithString: "Preview"
-            )
+        previewResolutionLabel = NSTextField(labelWithString: "1920 × 1080")
+        previewResolutionLabel.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        previewResolutionLabel.textColor = NSColor.tertiaryLabelColor
+        previewResolutionLabel.alignment = .right
+        previewResolutionLabel.frame = NSRect(x: Layout.previewWidth - 170, y: 16, width: 150, height: 18)
+        previewView.addSubview(previewResolutionLabel)
 
-        previewLabel.font =
-            NSFont.systemFont(
-                ofSize: 48,
-                weight: .light
-            )
-
-        previewLabel.textColor =
-            NSColor.secondaryLabelColor
-
-        previewLabel.alignment = .center
-
-        previewLabel.frame = NSRect(
-            x: 0,
-            y: (Layout.previewHeight - 58) / 2,
-            width: Layout.previewWidth,
-            height: 58
-        )
-
-        previewView.addSubview(
-            previewLabel
-        )
-
-        previewResolutionLabel =
-            NSTextField(
-                labelWithString:
-                    "1920 × 1080"
-            )
-
-        previewResolutionLabel.font =
-            NSFont.monospacedSystemFont(
-                ofSize: 13,
-                weight: .regular
-            )
-
-        previewResolutionLabel.textColor =
-            NSColor.tertiaryLabelColor
-
-        previewResolutionLabel.alignment =
-            .right
-
-        previewResolutionLabel.frame = NSRect(
-            x: Layout.previewWidth - 170,
-            y: 16,
-            width: 150,
-            height: 18
-        )
-
-        previewView.addSubview(
-            previewResolutionLabel
-        )
-
-        canvas.previewView =
-            previewView
-
-        scrollView.documentView =
-            canvas
-
-        NSLog(
-            "[Baram Motion] Preview created: %.0f x %.0f",
-            Layout.previewWidth,
-            Layout.previewHeight
-        )
-
+        canvas.previewView = previewView
+        scrollView.documentView = canvas
+        NSLog("[Baram Motion] Preview created: %.0f x %.0f", Layout.previewWidth, Layout.previewHeight)
         return scrollView
     }
 
     // MARK: - Timeline Panel
 
-    func createTimelinePanel()
-        -> NSView {
-
+    func createTimelinePanel() -> NSView {
         let panel = NSView()
-
         panel.wantsLayer = true
-
-        panel.layer?.backgroundColor =
-            BaramMotionTheme.timelineBackground.cgColor
+        panel.layer?.backgroundColor = BaramMotionTheme.timelineBackground.cgColor
 
         let border = NSView()
-
         border.wantsLayer = true
-
-        border.layer?.backgroundColor =
-            BaramMotionTheme.separator.cgColor
-
-        border.translatesAutoresizingMaskIntoConstraints =
-            false
-
+        border.layer?.backgroundColor = BaramMotionTheme.separator.cgColor
+        border.translatesAutoresizingMaskIntoConstraints = false
         panel.addSubview(border)
-
         NSLayoutConstraint.activate([
-            border.leadingAnchor.constraint(
-                equalTo: panel.leadingAnchor
-            ),
-            border.trailingAnchor.constraint(
-                equalTo: panel.trailingAnchor
-            ),
-            border.topAnchor.constraint(
-                equalTo: panel.topAnchor
-            ),
-            border.heightAnchor.constraint(
-                equalToConstant: 1
-            )
+            border.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            border.topAnchor.constraint(equalTo: panel.topAnchor),
+            border.heightAnchor.constraint(equalToConstant: 1)
         ])
 
-        let scrollView =
-            NSScrollView()
+        timelineLayerPanel = TimelineLayerPanelView()
+        timelineLayerPanel.translatesAutoresizingMaskIntoConstraints = false
+        timelineLayerPanel.delegate = self
+        panel.addSubview(timelineLayerPanel)
 
-        scrollView.hasHorizontalScroller =
-            true
-
-        scrollView.hasVerticalScroller =
-            true
-
-        scrollView.autohidesScrollers =
-            true
-
-        scrollView.horizontalScrollElasticity =
-            .allowed
-
-        scrollView.verticalScrollElasticity =
-            .allowed
-
+        let scrollView = NSScrollView()
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.horizontalScrollElasticity = .allowed
+        scrollView.verticalScrollElasticity = .allowed
         scrollView.drawsBackground = false
-
-        scrollView.translatesAutoresizingMaskIntoConstraints =
-            false
-
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         panel.addSubview(scrollView)
 
+        timelineContent = TimelineContentView()
+        timelineContent.delegate = self
+        scrollView.documentView = timelineContent
+        timelineScrollView = scrollView
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main) { [weak self] _ in
+            self?.syncTimelineLayerPanelScroll()
+        }
+
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(
-                equalTo: panel.leadingAnchor
-            ),
-            scrollView.trailingAnchor.constraint(
-                equalTo: panel.trailingAnchor
-            ),
-            scrollView.topAnchor.constraint(
-                equalTo: border.bottomAnchor,
-                constant: 4
-            ),
-            scrollView.bottomAnchor.constraint(
-                equalTo: panel.bottomAnchor,
-                constant: -4
-            )
+            timelineLayerPanel.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            timelineLayerPanel.topAnchor.constraint(equalTo: border.bottomAnchor, constant: 4),
+            timelineLayerPanel.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -4),
+            timelineLayerPanel.widthAnchor.constraint(equalToConstant: Layout.timelineLayerPanelWidth),
+            scrollView.leadingAnchor.constraint(equalTo: timelineLayerPanel.trailingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: border.bottomAnchor, constant: 4),
+            scrollView.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -4)
         ])
 
-        timelineContent =
-            TimelineContentView()
-
-        timelineContent.delegate = self
-
-        scrollView.documentView =
-            timelineContent
-
-        timelineScrollView =
-            scrollView
-
         updateTimelineSize()
-
-        NSLog(
-            "[Baram Motion] Timeline initialized."
-        )
-
+        NSLog("[Baram Motion] Timeline initialized with fixed layer panel.")
         return panel
+    }
+
+    func syncTimelineLayerPanelScroll() {
+        guard let clip = timelineScrollView?.contentView, let panel = timelineLayerPanel else { return }
+        panel.verticalOffset = clip.bounds.origin.y
+        panel.needsDisplay = true
     }
 
     // MARK: - Floating Panel
 
-    func createFloatingPanel(
-        title: String
-    ) -> (
-        panel: NSView,
-        content: NSView
-    ) {
-
+    func createFloatingPanel(title: String) -> (panel: NSView, content: NSView) {
         let panel = NSView()
-
         panel.wantsLayer = true
-
-        panel.layer?.cornerRadius =
-            Layout.glassRadius
-
-        panel.layer?.shadowColor =
-            NSColor.black.cgColor
-
+        panel.layer?.cornerRadius = Layout.glassRadius
+        panel.layer?.shadowColor = NSColor.black.cgColor
         panel.layer?.shadowOpacity = 0.12
-
-        panel.layer?.shadowOffset =
-            CGSize(
-                width: 0,
-                height: -6
-            )
-
+        panel.layer?.shadowOffset = CGSize(width: 0, height: -6)
         panel.layer?.shadowRadius = 24
 
         let contentView: NSView
-
         if #available(macOS 26.0, *) {
-
-            let glassView =
-                NSGlassEffectView()
-
+            let glassView = NSGlassEffectView()
             glassView.style = .regular
-            glassView.cornerRadius =
-                Layout.glassRadius
-
-            glassView.frame =
-                panel.bounds
-
-            glassView.autoresizingMask = [
-                .width,
-                .height
-            ]
-
-            glassView.tintColor =
-                NSColor(
-                    white: 1,
-                    alpha: 0.035
-                )
-
-            panel.addSubview(
-                glassView
-            )
-
+            glassView.cornerRadius = Layout.glassRadius
+            glassView.frame = panel.bounds
+            glassView.autoresizingMask = [.width, .height]
+            glassView.tintColor = NSColor(white: 1, alpha: 0.035)
+            panel.addSubview(glassView)
             contentView = NSView()
-
-            contentView.translatesAutoresizingMaskIntoConstraints =
-                false
-
-            glassView.contentView =
-                contentView
-
+            contentView.translatesAutoresizingMaskIntoConstraints = false
+            glassView.contentView = contentView
             NSLayoutConstraint.activate([
-                contentView.leadingAnchor.constraint(
-                    equalTo:
-                        glassView.leadingAnchor
-                ),
-                contentView.trailingAnchor.constraint(
-                    equalTo:
-                        glassView.trailingAnchor
-                ),
-                contentView.topAnchor.constraint(
-                    equalTo:
-                        glassView.topAnchor
-                ),
-                contentView.bottomAnchor.constraint(
-                    equalTo:
-                        glassView.bottomAnchor
-                )
+                contentView.leadingAnchor.constraint(equalTo: glassView.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: glassView.trailingAnchor),
+                contentView.topAnchor.constraint(equalTo: glassView.topAnchor),
+                contentView.bottomAnchor.constraint(equalTo: glassView.bottomAnchor)
             ])
-
         } else {
-
-            let fallback =
-                NSVisualEffectView()
-
-            fallback.material =
-                .hudWindow
-
-            fallback.blendingMode =
-                .withinWindow
-
-            fallback.state =
-                .active
-
+            let fallback = NSVisualEffectView()
+            fallback.material = .hudWindow
+            fallback.blendingMode = .withinWindow
+            fallback.state = .active
             fallback.wantsLayer = true
-
-            fallback.layer?.cornerRadius =
-                Layout.glassRadius
-
-            fallback.layer?.masksToBounds =
-                true
-
-            fallback.frame =
-                panel.bounds
-
-            fallback.autoresizingMask = [
-                .width,
-                .height
-            ]
-
-            panel.addSubview(
-                fallback
-            )
-
-            contentView =
-                fallback
+            fallback.layer?.cornerRadius = Layout.glassRadius
+            fallback.layer?.masksToBounds = true
+            fallback.frame = panel.bounds
+            fallback.autoresizingMask = [.width, .height]
+            panel.addSubview(fallback)
+            contentView = fallback
         }
 
-        let titleLabel =
-            NSTextField(
-                labelWithString: title
-            )
-
-        titleLabel.font =
-            NSFont.systemFont(
-                ofSize: 13,
-                weight: .semibold
-            )
-
-        titleLabel.textColor =
-            BaramMotionTheme.primaryText
-
-        titleLabel.translatesAutoresizingMaskIntoConstraints =
-            false
-
-        contentView.addSubview(
-            titleLabel
-        )
-
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = BaramMotionTheme.primaryText
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(titleLabel)
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(
-                equalTo:
-                    contentView.leadingAnchor,
-                constant: 20
-            ),
-            titleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo:
-                    contentView.trailingAnchor,
-                constant: -20
-            ),
-            titleLabel.topAnchor.constraint(
-                equalTo:
-                    contentView.topAnchor,
-                constant: 18
-            )
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 18)
         ])
-
-        return (
-            panel: panel,
-            content: contentView
-        )
+        return (panel, contentView)
     }
 
-    // MARK: - Left Panel
+    // MARK: - Legacy Layer List
 
-    func createLeftPanelContent() {
+    // Layer list was moved to the fixed timeline layer panel.
+    func createLeftPanelContent() { }
+    func refreshLayerList() { }
+}
 
-        let scrollView =
-            NSScrollView()
-
-        scrollView.hasVerticalScroller =
-            true
-
-        scrollView.drawsBackground =
-            false
-
-        scrollView.borderType =
-            .noBorder
-
-        scrollView.translatesAutoresizingMaskIntoConstraints =
-            false
-
-        layerListStack =
-            NSStackView()
-
-        layerListStack.orientation =
-            .vertical
-
-        layerListStack.alignment =
-            .width
-
-        layerListStack.spacing =
-            6
-
-        layerListStack.translatesAutoresizingMaskIntoConstraints =
-            false
-
-        scrollView.documentView =
-            layerListStack
-
-        leftContentView.addSubview(
-            scrollView
-        )
-
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(
-                equalTo:
-                    leftContentView.leadingAnchor,
-                constant: 12
-            ),
-            scrollView.trailingAnchor.constraint(
-                equalTo:
-                    leftContentView.trailingAnchor,
-                constant: -12
-            ),
-            scrollView.topAnchor.constraint(
-                equalTo:
-                    leftContentView.topAnchor,
-                constant: 54
-            ),
-            scrollView.bottomAnchor.constraint(
-                equalTo:
-                    leftContentView.bottomAnchor,
-                constant: -12
-            ),
-            layerListStack.widthAnchor.constraint(
-                equalTo:
-                    scrollView.contentView.widthAnchor
-            )
-        ])
-
-        layerListScrollView =
-            scrollView
-
-        refreshLayerList()
+extension MainViewController: NSToolbarDelegate {
+    enum ToolbarItemID {
+        static let undo = NSToolbarItem.Identifier("BaramMotion.Undo")
+        static let redo = NSToolbarItem.Identifier("BaramMotion.Redo")
+        static let text = NSToolbarItem.Identifier("BaramMotion.Text")
+        static let rectangle = NSToolbarItem.Identifier("BaramMotion.Rectangle")
+        static let toggle = NSToolbarItem.Identifier("BaramMotion.Toggle")
+        static let export = NSToolbarItem.Identifier("BaramMotion.Export")
     }
 
-    func refreshLayerList() {
-
-        guard let stack = layerListStack else {
-
-            NSLog(
-                "[Baram Motion] ERROR: Layer list stack is nil."
-            )
-
-            return
-        }
-
-        stack.arrangedSubviews.forEach {
-            stack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
-
-        guard !layers.isEmpty else {
-
-            let emptyLabel =
-                NSTextField(
-                    labelWithString:
-                        "レイヤーなし"
-                )
-
-            emptyLabel.alignment =
-                .center
-
-            emptyLabel.textColor =
-                NSColor.secondaryLabelColor
-
-            stack.addArrangedSubview(
-                emptyLabel
-            )
-
-            return
-        }
-
-        for layer in layers {
-
-            let button =
-                LayerListButton()
-
-            button.layerID =
-                layer.id
-
-            button.title =
-                "\(layer.kind.displayName)  \(layer.name)"
-
-            button.target =
-                self
-
-            button.action =
-                #selector(
-                    layerListButtonPressed(_:)
-                )
-
-            button.bezelStyle =
-                .rounded
-
-            button.controlSize =
-                .small
-
-            button.font =
-                NSFont.systemFont(
-                    ofSize: 12,
-                    weight:
-                        layer.id == selectedLayerID
-                        ? .semibold
-                        : .regular
-                )
-
-            if #available(macOS 10.14, *) {
-                button.contentTintColor =
-                    layer.id == selectedLayerID
-                    ? NSColor.controlAccentColor
-                    : NSColor.labelColor
-            }
-
-            stack.addArrangedSubview(
-                button
-            )
-        }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [ToolbarItemID.undo, ToolbarItemID.redo, .flexibleSpace, ToolbarItemID.text, ToolbarItemID.rectangle, ToolbarItemID.toggle, .flexibleSpace, ToolbarItemID.export]
     }
 
-    @objc
-    func layerListButtonPressed(
-        _ sender: LayerListButton
-    ) {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [ToolbarItemID.undo, ToolbarItemID.redo, .flexibleSpace, ToolbarItemID.text, ToolbarItemID.rectangle, ToolbarItemID.toggle, .flexibleSpace, ToolbarItemID.export]
+    }
 
-        guard let id = sender.layerID else {
-
-            NSLog(
-                "[Baram Motion] ERROR: Layer button has no ID."
-            )
-
-            return
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.target = self
+        switch itemIdentifier {
+        case ToolbarItemID.undo:
+            item.label = "元に戻す"; item.toolTip = "元に戻す"; item.image = NSImage(systemSymbolName:"arrow.uturn.backward",accessibilityDescription:nil); item.action=#selector(undoAction)
+        case ToolbarItemID.redo:
+            item.label = "やり直す"; item.toolTip = "やり直す"; item.image = NSImage(systemSymbolName:"arrow.uturn.forward",accessibilityDescription:nil); item.action=#selector(redoAction)
+        case ToolbarItemID.text:
+            item.label = "テキスト"; item.toolTip = "テキストを追加"; item.image = NSImage(systemSymbolName:"textformat",accessibilityDescription:nil); item.action=#selector(addTextLayer)
+        case ToolbarItemID.rectangle:
+            item.label = "図形"; item.toolTip = "四角形を追加"; item.image = NSImage(systemSymbolName:"rectangle",accessibilityDescription:nil); item.action=#selector(addRectangleLayer)
+        case ToolbarItemID.toggle:
+            item.label = "Switch"; item.toolTip = "SwiftUI Switchを追加"; item.image = NSImage(systemSymbolName:"switch.2",accessibilityDescription:nil); item.action=#selector(addToggleLayer)
+        case ToolbarItemID.export:
+            item.label = "書き出し"; item.toolTip = "現在のフレームを書き出す"; item.image = NSImage(systemSymbolName:"square.and.arrow.down",accessibilityDescription:nil); item.action=#selector(exportCurrentFrame)
+        default: return nil
         }
-
-        selectLayer(id)
+        return item
     }
 }
