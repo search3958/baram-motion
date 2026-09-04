@@ -4,14 +4,13 @@ extension MainViewController: TimelineContentViewDelegate {
     func timelineContentView(_ view: TimelineContentView, didSelectLayer id: UUID) { selectLayer(id) }
 
     func timelineContentView(_ view: TimelineContentView, didBeginEditingLayer id: UUID) {
-    guard layers.contains(where: { $0.id == id }) else {
-        NSLog("[Baram Motion] ERROR: Timeline edit layer not found.")
-        return
+        guard layers.contains(where: { $0.id == id }) else {
+            NSLog("[Baram Motion] ERROR: Timeline edit layer not found: %@", id.uuidString)
+            return
+        }
+        timelineEditBeforeSnapshot = captureSnapshot()
+        NSLog("[Baram Motion] Timeline editing began: %@", id.uuidString)
     }
-
-    timelineEditBeforeSnapshot = captureSnapshot()
-    NSLog("[Baram Motion] Timeline editing began: \(id)")
-}
 
     func timelineContentView(_ view: TimelineContentView, didChangeLayer id: UUID, startTime: CGFloat, duration: CGFloat) {
         guard let layer=layers.first(where:{$0.id==id}) else { NSLog("[Baram Motion] ERROR: Timeline layer not found."); return }
@@ -37,9 +36,8 @@ extension MainViewController: TimelineContentViewDelegate {
 
     func timelineContentView(_ view: TimelineContentView, didRequestAddKeyframe layerID: UUID, frame: Int) {
         guard let layer=layers.first(where:{$0.id==layerID}) else { NSLog("[Baram Motion] ERROR: Timeline keyframe layer not found."); return }
-        let before=captureSnapshot()
-        if let index=layer.keyframes.firstIndex(where:{$0.frame==frame}) { layer.keyframes.remove(at:index) }
-        else { let t=evaluatedTransform(for:layer,frame:frame); layer.keyframes.append(TransformKeyframe(frame:frame,x:t.x,y:t.y,width:t.width,height:t.height)); layer.keyframes.sort{$0.frame<$1.frame} }
+        let before = captureSnapshot()
+        toggleKeyframe(property: .x, layer: layer, frame: frame)
         playbackFrameChanged(frame); finishMutation(before:before,actionName:"キーフレーム変更")
     }
 }

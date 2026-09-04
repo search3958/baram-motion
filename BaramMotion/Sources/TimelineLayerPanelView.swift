@@ -13,6 +13,7 @@ final class TimelineLayerPanelView: NSView {
     private var layers:[MainViewController.LayerModelProxy]=[]
     private var selectedLayerID:UUID?
     var verticalOffset:CGFloat=0 { didSet { needsDisplay=true } }
+    var documentHeight:CGFloat=0 { didSet { needsDisplay=true } }
     private let rulerHeight:CGFloat=28
     private let rowHeight:CGFloat=34
     private var draggingID:UUID?
@@ -22,7 +23,8 @@ final class TimelineLayerPanelView: NSView {
     override func draw(_ dirtyRect:NSRect) {
         super.draw(dirtyRect)
         NSColor.controlBackgroundColor.setFill(); bounds.fill()
-        let firstY=bounds.height-rulerHeight-rowHeight-verticalOffset
+        let sourceHeight = documentHeight > 0 ? documentHeight : bounds.height
+        let firstY=sourceHeight-rulerHeight-rowHeight-verticalOffset
         NSColor.separatorColor.setStroke(); NSRect(x:bounds.width-1,y:0,width:1,height:bounds.height).fill()
         NSString(string:"レイヤー").draw(at:NSPoint(x:12,y:bounds.height-rulerHeight+8),withAttributes:[.font:NSFont.systemFont(ofSize:10,weight:.semibold),.foregroundColor:NSColor.secondaryLabelColor])
         for index in layers.indices {
@@ -59,7 +61,8 @@ final class TimelineLayerPanelView: NSView {
 
     private func hitIndex(y:CGFloat)->Int? {
         let localY=y+verticalOffset
-        let firstY=bounds.height-rulerHeight-rowHeight
+        let sourceHeight = documentHeight > 0 ? documentHeight : bounds.height
+        let firstY=sourceHeight-rulerHeight-rowHeight
         let raw=(firstY-localY)/rowHeight
         let index=Int(raw.rounded())
         return layers.indices.contains(index) ? index : nil

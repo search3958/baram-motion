@@ -24,30 +24,79 @@ extension MainViewController {
 
     var timelineProxies: [LayerModelProxy] { timelineProxiesForUI() }
 
-    // MARK: - Preview Rendering
-
     func timelineProxiesForUI() -> [LayerModelProxy] {
         layers.map {
             LayerModelProxy(id:$0.id, kindDisplayName:$0.kind.displayName, name:$0.name,
                             color:$0.color, startTime:$0.startTime, duration:$0.duration,
-                            isVisible:$0.isVisible, keyframeFrames:$0.keyframes.map(\.frame))
+                            isVisible:$0.isVisible, keyframeFrames:Array(Set($0.propertyKeyframes.map(\.frame))).sorted())
         }
     }
 
+    func evaluatedNumeric(for layer: LayerModel, property: AnimatedProperty, frame: Int, defaultValue: CGFloat) -> CGFloat {
+        let keys = layer.propertyKeyframes.filter { $0.property == property }.sorted { $0.frame < $1.frame }
+        guard !keys.isEmpty else { return defaultValue }
+        if frame <= keys[0].frame { return keys[0].scalar }
+        guard let next = keys.firstIndex(where: { $0.frame >= frame }) else { return keys.last?.scalar ?? defaultValue }
+        if keys[next].frame == frame { return keys[next].scalar }
+        let a = keys[next - 1], b = keys[next]
+        let range = CGFloat(max(1, b.frame - a.frame))
+        let raw = CGFloat(frame - a.frame) / range
+        return lerp(a.scalar, b.scalar, easedProgress(raw, easing: a.easing))
+    }
+
     func evaluatedTransform(for layer: LayerModel, frame: Int) -> TransformValue {
-        let keyframes=layer.keyframes.sorted { $0.frame < $1.frame }
-        guard !keyframes.isEmpty else { return layer.currentTransform() }
-        if frame <= keyframes[0].frame { return keyframes[0].value }
-        guard let nextIndex=keyframes.firstIndex(where:{ $0.frame >= frame }) else { return keyframes.last!.value }
-        if keyframes[nextIndex].frame == frame { return keyframes[nextIndex].value }
-        let a=keyframes[nextIndex-1], b=keyframes[nextIndex]
-        let range=CGFloat(b.frame-a.frame)
-        let raw=range > 0 ? CGFloat(frame-a.frame)/range : 0
-        let t=easedProgress(raw, easing:a.easing)
-        return TransformValue(
-            x: lerp(a.x,b.x,t), y: lerp(a.y,b.y,t),
-            width: lerp(a.width,b.width,t), height: lerp(a.height,b.height,t)
+        TransformValue(
+            x: evaluatedNumeric(for: layer, property: .x, frame: frame, defaultValue: layer.x),
+            y: evaluatedNumeric(for: layer, property: .y, frame: frame, defaultValue: layer.y),
+            width: max(1, evaluatedNumeric(for: layer, property: .width, frame: frame, defaultValue: layer.width)),
+            height: max(1, evaluatedNumeric(for: layer, property: .height, frame: frame, defaultValue: layer.height))
         )
+    }
+
+    func evaluatedCornerRadius(for layer: LayerModel, frame: Int) -> CGFloat {
+        max(0, evaluatedNumeric(for: layer, property: .cornerRadius, frame: frame, defaultValue: layer.cornerRadius))
+    }
+
+    func evaluatedText(for layer: LayerModel, frame: Int) -> String {
+        let keys = layer.propertyKeyframes
+            .filter { $0.property == .text }
+            .sorted { $0.frame < $1.frame }
+        guard !keys.isEmpty else { return layer.text }
+        if frame <= keys[0].frame { return keys[0].text }
+        guard let nextIndex = keys.firstIndex(where: { $0.frame >= frame }) else {
+            return keys.last?.text ?? layer.text
+        }
+        if keys[nextIndex].frame == frame { return keys[nextIndex].text }
+        return keys[nextIndex - 1].text
+    }
+
+    func evaluatedSwitchState(for layer: LayerModel, frame: Int) -> Bool {
+        let keys = layer.propertyKeyframes
+            .filter { $0.property == .isOn }
+            .sorted { $0.frame < $1.frame }
+        guard !keys.isEmpty else { return layer.isOn }
+        if frame <= keys[0].frame { return keys[0].boolValue }
+        guard let nextIndex = keys.firstIndex(where: { $0.frame >= frame }) else {
+            return keys.last?.boolValue ?? layer.isOn
+        }
+        if keys[nextIndex].frame == frame { return keys[nextIndex].boolValue }
+        return keys[nextIndex - 1].boolValue
+    }
+
+    func evaluatedColor(for layer: LayerModel, frame: Int) -> NSColor {
+        let keys = layer.propertyKeyframes.filter { $0.property == .color }.sorted { $0.frame < $1.frame }
+        guard !keys.isEmpty else { return layer.color }
+        guard let first = keys.first else { return layer.color }
+        if frame <= first.frame { return (first.colorValue ?? ColorValue.from(layer.color)).nsColor() }
+        guard let nextIndex = keys.firstIndex(where: { $0.frame >= frame }) else {
+            return (keys.last?.colorValue ?? ColorValue.from(layer.color)).nsColor()
+        }
+        if keys[nextIndex].frame == frame { return (keys[nextIndex].colorValue ?? ColorValue.from(layer.color)).nsColor() }
+        let a = keys[nextIndex - 1].colorValue ?? ColorValue.from(layer.color)
+        let b = keys[nextIndex].colorValue ?? a
+        let raw = CGFloat(frame - keys[nextIndex - 1].frame) / CGFloat(max(1, keys[nextIndex].frame - keys[nextIndex - 1].frame))
+        let t = easedProgress(raw, easing: keys[nextIndex - 1].easing)
+        return ColorValue(r: a.r+(b.r-a.r)*t, g:a.g+(b.g-a.g)*t, b:a.b+(b.b-a.b)*t, a:a.a+(b.a-a.a)*t).nsColor()
     }
 
     func easedProgress(_ value: CGFloat, easing: KeyframeEasing) -> CGFloat {
@@ -74,15 +123,18 @@ extension MainViewController {
         for layer in layers.reversed() {
             guard layer.isVisible, layer.startTime <= time, time < layer.startTime+layer.duration else { continue }
             let element=PreviewElementView(layerID:layer.id, kind:layer.kind)
-            element.backgroundColor=layer.color
-            element.switchTint=Color(nsColor:layer.color)
+            let evaluatedColor = evaluatedColor(for: layer, frame: frame)
+            element.backgroundColor=evaluatedColor
+            element.switchTint=Color(nsColor:evaluatedColor)
             element.fontSize=layer.fontSize
-            element.text=layer.name
-            element.isOn=layer.isOn
+            element.text=evaluatedText(for:layer,frame:frame)
+            element.isOn=evaluatedSwitchState(for:layer,frame:frame)
             let transform=evaluatedTransform(for:layer,frame:frame)
             let displayLayer=layer.copyLayer()
             displayLayer.x=transform.x; displayLayer.y=transform.y
             displayLayer.width=transform.width; displayLayer.height=transform.height
+            displayLayer.cornerRadius = evaluatedCornerRadius(for: layer, frame: frame)
+            element.cornerRadius = displayLayer.cornerRadius
             element.frame=frameForLayer(displayLayer)
             element.onSelect={ [weak self] id in self?.selectLayer(id) }
             element.onBeginMove={ [weak self] id in self?.beginPreviewLayerEditing(id) }
@@ -126,7 +178,7 @@ extension MainViewController {
         }
 
         colorWell?.color =
-            layer.color
+            evaluatedColor(for: layer, frame: playbackController.currentFrame)
 
         anchorPopup?.selectItem(
             at:
@@ -139,10 +191,24 @@ extension MainViewController {
         widthField?.stringValue = formatNumber(transform.width)
         heightField?.stringValue = formatNumber(transform.height)
 
+        cornerRadiusField?.stringValue = formatNumber(evaluatedCornerRadius(for: layer, frame: playbackController.currentFrame))
+
         fontSizeField?.stringValue =
             formatNumber(
                 layer.fontSize
             )
+
+        let switchTransform = evaluatedTransform(for: layer, frame: playbackController.currentFrame)
+        switchWidthField?.stringValue = formatNumber(switchTransform.width)
+        switchHeightField?.stringValue = formatNumber(switchTransform.height)
+
+        for (property, button) in keyframeButtons {
+            button.title = keyframeFor(property: property, layer: layer, frame: playbackController.currentFrame) ? "◆" : "◇"
+        }
+
+        if let textContentField, layer.kind == .text {
+            textContentField.stringValue = evaluatedText(for: layer, frame: playbackController.currentFrame)
+        }
 
     }
 

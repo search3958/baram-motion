@@ -2,61 +2,106 @@ import AppKit
 
 extension MainViewController {
     func createKeyframePanelContent() {
-        let stack = NSStackView(); stack.orientation  =  .vertical; stack.alignment  =  .leading; stack.spacing  =  10; stack.translatesAutoresizingMaskIntoConstraints  =  false
-        leftContentView.addSubview(stack)
+        guard leftContentView != nil else { NSLog("[Baram Motion] ERROR: Graph editor container unavailable."); return }
+        let graph = KeyframeGraphView(); graph.translatesAutoresizingMaskIntoConstraints = false; graph.delegate = self
+        leftContentView.addSubview(graph)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo:leftContentView.leadingAnchor,constant:16),
-            stack.trailingAnchor.constraint(equalTo:leftContentView.trailingAnchor,constant:-16),
-            stack.topAnchor.constraint(equalTo:leftContentView.topAnchor,constant:52),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo:leftContentView.bottomAnchor,constant:-16)
+            graph.leadingAnchor.constraint(equalTo: leftContentView.leadingAnchor, constant: 10),
+            graph.trailingAnchor.constraint(equalTo: leftContentView.trailingAnchor, constant: -10),
+            graph.topAnchor.constraint(equalTo: leftContentView.topAnchor, constant: 40),
+            graph.bottomAnchor.constraint(equalTo: leftContentView.bottomAnchor, constant: -10)
         ])
-        keyframeInspectorStack = stack; rebuildKeyframeInspector()
+        keyframeGraphView = graph
+        refreshKeyframeInspector()
+        NSLog("[Baram Motion] Unified graph editor initialized.")
     }
 
-    func rebuildKeyframeInspector() {
-        guard let stack = keyframeInspectorStack else { NSLog("[Baram Motion] ERROR: Keyframe inspector stack is nil."); return }
-        stack.arrangedSubviews.forEach{stack.removeArrangedSubview($0);$0.removeFromSuperview()}
-        keyframeFrameField = nil; keyframeEasingPopup = nil; keyframeXField = nil; keyframeYField = nil; keyframeWidthField = nil; keyframeHeightField = nil
-        guard let layer = selectedLayer else { stack.addArrangedSubview(NSTextField(labelWithString:"レイヤーを選択してください")); return }
-        let transform = evaluatedTransform(for:layer,frame:playbackController.currentFrame)
-        let title = NSTextField(labelWithString:"Transform キーフレーム"); title.font = NSFont.systemFont(ofSize:13,weight:.semibold); stack.addArrangedSubview(title)
-
-        let frame = NSTextField(string:String(playbackController.currentFrame)); frame.controlSize = .small; frame.alignment = .right; frame.widthAnchor.constraint(equalToConstant:120).isActive = true; frame.target = self; frame.action = #selector(keyframeFrameFieldChanged(_:)); keyframeFrameField = frame; stack.addArrangedSubview(makeInspectorRow(title:"フレーム",control:frame))
-        let easing = NSPopUpButton(); easing.addItems(withTitles:KeyframeEasing.allCases.map{$0.rawValue}); easing.selectItem(withTitle:currentKeyframeEasing(for:layer).rawValue); easing.target = self; easing.action = #selector(changeKeyframeEasing(_:)); keyframeEasingPopup = easing; stack.addArrangedSubview(makeInspectorRow(title:"イージング",control:easing))
-
-        let fields = [("X",transform.x),("Y",transform.y),("幅",transform.width),("高さ",transform.height)]
-        for (name,value) in fields { let f = makeNumericField(value); f.target = self; f.action = #selector(changeKeyframeValue(_:)); f.identifier = NSUserInterfaceItemIdentifier(name); stack.addArrangedSubview(makeInspectorRow(title:name,control:f)); switch name{case"X":keyframeXField = f;case"Y":keyframeYField = f;case"幅":keyframeWidthField = f;default:keyframeHeightField = f} }
-        let has = hasKeyframe(layer); let button = NSButton(title:has ? "◆ キーフレームを削除":"◇ 現在位置にキーフレーム",target:self,action:#selector(toggleKeyframeAtCurrentFrame)); button.bezelStyle = .rounded; stack.addArrangedSubview(button)
-        let hint = NSTextField(labelWithString:"キーフレームは位置・サイズをまとめて記録します。\nキーフレーム間はイージングで補間されます。"); hint.font = NSFont.systemFont(ofSize:10); hint.textColor = NSColor.secondaryLabelColor; hint.maximumNumberOfLines = 3; stack.addArrangedSubview(hint)
+    func refreshKeyframeInspector() {
+        guard let graph = keyframeGraphView else { return }
+        graph.layers = layers
+        graph.selectedLayerID = selectedLayerID
+        graph.currentFrame = playbackController.currentFrame
+        graph.selectedProperty = selectedGraphProperty
+        graph.selectedKeyframeFrame = selectedGraphFrame
     }
 
-    func currentKeyframeEasing(for layer:LayerModel)->KeyframeEasing { layer.keyframes.first(where:{$0.frame==playbackController.currentFrame})?.easing ?? .linear }
-    func hasKeyframe(_ layer:LayerModel)->Bool { layer.keyframes.contains{$0.frame==playbackController.currentFrame} }
-
-    @objc func keyframeFrameFieldChanged(_ sender:NSTextField) {
-        guard let layer = selectedLayer, let index = layer.keyframes.firstIndex(where:{$0.frame==playbackController.currentFrame}), let newFrame = Int(sender.stringValue), newFrame>=0 else { NSLog("[Baram Motion] ERROR: Current frame is not a keyframe or value is invalid."); return }
-        guard !layer.keyframes.contains(where:{$0.frame==newFrame && $0.frame != playbackController.currentFrame}) else { NSLog("[Baram Motion] ERROR: Keyframe frame already exists."); rebuildKeyframeInspector(); return }
-        let before = captureSnapshot(); layer.keyframes[index].frame = newFrame; layer.keyframes.sort{$0.frame<$1.frame}; finishMutation(before:before,actionName:"キーフレーム時間変更")
+    func keyframeFor(property: AnimatedProperty, layer: LayerModel, frame: Int) -> Bool {
+        layer.propertyKeyframes.contains { $0.frame == frame && $0.property == property }
     }
 
-    @objc func changeKeyframeEasing(_ sender:NSPopUpButton) {
-        guard let layer = selectedLayer, let index = layer.keyframes.firstIndex(where:{$0.frame==playbackController.currentFrame}), let title = sender.titleOfSelectedItem, let easing = KeyframeEasing(rawValue:title) else { NSLog("[Baram Motion] ERROR: No current keyframe."); return }
-        let before = captureSnapshot(); layer.keyframes[index].easing = easing; finishMutation(before:before,actionName:"イージング変更")
+    @objc func toggleKeyframeForProperty(_ sender: NSButton) {
+        guard let layer = selectedLayer, let raw = sender.identifier?.rawValue, let property = AnimatedProperty(rawValue: raw) else {
+            NSLog("[Baram Motion] ERROR: Invalid keyframe property button target."); return
+        }
+        let before = captureSnapshot(); toggleKeyframe(property: property, layer: layer, frame: playbackController.currentFrame)
+        selectedGraphProperty = property; selectedGraphFrame = playbackController.currentFrame
+        finishMutation(before: before, actionName: "\(property.rawValue) キーフレーム変更")
     }
 
-    @objc func toggleKeyframeAtCurrentFrame() {
-        guard let layer = selectedLayer else { return }; let before = captureSnapshot()
-        if let index = layer.keyframes.firstIndex(where:{$0.frame==playbackController.currentFrame}) { layer.keyframes.remove(at:index) }
-        else { let t = evaluatedTransform(for:layer,frame:playbackController.currentFrame); layer.keyframes.append(TransformKeyframe(frame:playbackController.currentFrame,x:t.x,y:t.y,width:t.width,height:t.height)); layer.keyframes.sort{$0.frame<$1.frame} }
-        finishMutation(before:before,actionName:"キーフレーム変更")
+    func toggleKeyframe(property: AnimatedProperty, layer: LayerModel, frame: Int) {
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.frame == frame && $0.property == property }) { layer.propertyKeyframes.remove(at: idx); return }
+        switch property {
+        case .x, .y, .width, .height:
+            let t = evaluatedTransform(for: layer, frame: frame)
+            let value: CGFloat = property == .x ? t.x : property == .y ? t.y : property == .width ? t.width : t.height
+            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: value))
+        case .cornerRadius:
+            layer.propertyKeyframes.append(.scalar(.cornerRadius, frame: frame, value: evaluatedCornerRadius(for: layer, frame: frame)))
+        case .color:
+            layer.propertyKeyframes.append(.color(frame, value: ColorValue.from(evaluatedColor(for: layer, frame: frame))))
+        case .text:
+            layer.propertyKeyframes.append(.text(frame, value: evaluatedText(for: layer, frame: frame)))
+        case .isOn:
+            layer.propertyKeyframes.append(.state(frame, value: evaluatedSwitchState(for: layer, frame: frame)))
+        }
+        normalizeKeyframes(layer)
     }
 
-    @objc func changeKeyframeValue(_ sender:NSTextField) {
-        guard let layer = selectedLayer, let index = layer.keyframes.firstIndex(where:{$0.frame==playbackController.currentFrame}), let number = Double(sender.stringValue), number.isFinite else { NSLog("[Baram Motion] ERROR: Add a keyframe before editing its value."); return }
-        let before = captureSnapshot(); let value = CGFloat(number)
-        switch sender.identifier?.rawValue { case "X":layer.keyframes[index].x = value; case "Y":layer.keyframes[index].y = value; case "幅":layer.keyframes[index].width = max(1,value); case "高さ":layer.keyframes[index].height = max(1,value); default:return }
-        finishMutation(before:before,actionName:"キーフレーム値変更")
+    func normalizeKeyframes(_ layer: LayerModel) {
+        layer.propertyKeyframes.sort { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
     }
 
-    func refreshKeyframeInspector() { rebuildKeyframeInspector() }
+    func moveGraphKeyframe(layerID: UUID, property: AnimatedProperty, fromFrame: Int, toFrame: Int, value: CGFloat?) {
+        guard let layer = layers.first(where: { $0.id == layerID }), let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == fromFrame }) else { return }
+        let target = max(0, min(totalPlaybackFrames, toFrame))
+        guard !layer.propertyKeyframes.contains(where: { $0.property == property && $0.frame == target && $0.frame != fromFrame }) else { return }
+        layer.propertyKeyframes[idx].frame = target
+        if let value {
+            switch property {
+            case .x,.y: layer.propertyKeyframes[idx].scalar = value
+            case .width,.height: layer.propertyKeyframes[idx].scalar = max(1, value)
+            case .cornerRadius: layer.propertyKeyframes[idx].scalar = max(0, value)
+            case .color:
+                let old = layer.propertyKeyframes[idx].colorValue ?? ColorValue.from(layer.color)
+                let brightness = max(0, min(1, value))
+                let current = old.brightness
+                let factor = current > 0.0001 ? brightness/current : brightness
+                layer.propertyKeyframes[idx].colorValue = ColorValue(r: min(1,old.r*factor), g:min(1,old.g*factor), b:min(1,old.b*factor), a:old.a)
+                layer.propertyKeyframes[idx].scalar = brightness
+            case .isOn: layer.propertyKeyframes[idx].boolValue = value >= 0.5
+            case .text: break
+            }
+        }
+        normalizeKeyframes(layer); selectedGraphProperty=property; selectedGraphFrame=target; playbackFrameChanged(target)
+    }
+}
+
+extension MainViewController: KeyframeGraphViewDelegate {
+    func keyframeGraph(_ graph: KeyframeGraphView, didSelect property: AnimatedProperty, frame: Int) {
+        selectedGraphProperty=property; selectedGraphFrame=frame; playbackFrameChanged(frame)
+    }
+
+    func keyframeGraph(_ graph: KeyframeGraphView, didMove layerID: UUID, property: AnimatedProperty, fromFrame: Int, toFrame: Int, value: CGFloat?) {
+        moveGraphKeyframe(layerID: layerID, property: property, fromFrame: fromFrame, toFrame: toFrame, value: value); refreshAll()
+    }
+
+    func keyframeGraph(_ graph: KeyframeGraphView, didChangeEasingAt layerID: UUID, property: AnimatedProperty, frame: Int, easing: KeyframeEasing) {
+        guard let layer=layers.first(where:{$0.id==layerID}), let idx=layer.propertyKeyframes.firstIndex(where:{$0.frame==frame && $0.property==property}) else { return }
+        let before=captureSnapshot(); layer.propertyKeyframes[idx].easing=easing; finishMutation(before:before, actionName:"グラフのイージング変更"); refreshKeyframeInspector()
+    }
+
+    func keyframeGraph(_ graph: KeyframeGraphView, didAddKeyframeFor property: AnimatedProperty, at frame: Int) {
+        guard let layer=selectedLayer else { return }
+        let before=captureSnapshot(); toggleKeyframe(property:property, layer:layer, frame:frame); selectedGraphProperty=property; selectedGraphFrame=frame; playbackFrameChanged(frame); finishMutation(before:before,actionName:"グラフからキーフレーム追加"); refreshAll()
+    }
 }

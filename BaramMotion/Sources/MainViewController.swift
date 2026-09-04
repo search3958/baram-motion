@@ -23,13 +23,13 @@ final class MainViewController: NSViewController {
 
     var leftContentView: NSView!
     var rightContentView: NSView!
-    var keyframeInspectorStack: NSStackView!
-    var keyframeFrameField: NSTextField?
-    var keyframeEasingPopup: NSPopUpButton?
-    var keyframeXField: NSTextField?
-    var keyframeYField: NSTextField?
-    var keyframeWidthField: NSTextField?
-    var keyframeHeightField: NSTextField?
+    var keyframeGraphView: KeyframeGraphView!
+    var selectedGraphProperty: AnimatedProperty?
+    var selectedGraphFrame: Int?
+
+    var textContentField: NSTextField?
+    var switchStateHostingView: NSHostingView<PanelSwitchEditorView>?
+    var keyframeButtons: [AnimatedProperty: NSButton] = [:]
 
     var layerListScrollView: NSScrollView!
     var layerListStack: NSStackView!
@@ -45,7 +45,10 @@ final class MainViewController: NSViewController {
     var yField: NSTextField?
     var widthField: NSTextField?
     var heightField: NSTextField?
+    var cornerRadiusField: NSTextField?
     var fontSizeField: NSTextField?
+    var switchWidthField: NSTextField?
+    var switchHeightField: NSTextField?
 
     // Playback controls
     let playbackController = PlaybackController()
@@ -78,7 +81,7 @@ final class MainViewController: NSViewController {
 
     override func loadView() {
 
-        let rootView = NSView(
+        let rootView = MainEditorRootView(
             frame: NSRect(
                 x: 0,
                 y: 0,
@@ -86,9 +89,13 @@ final class MainViewController: NSViewController {
                 height: 900
             )
         )
-
+        rootView.onSpacePressed = { [weak self] in
+            guard let self else { return }
+            self.playbackController.togglePlay()
+            self.refreshPlaybackUI()
+            NSLog("[Baram Motion] Space: playback %@", self.playbackController.isPlaying ? "started" : "stopped")
+        }
         rootView.wantsLayer = true
-
         view = rootView
     }
 
@@ -102,6 +109,7 @@ final class MainViewController: NSViewController {
         super.viewDidAppear()
 
         configureToolbarIfNeeded()
+        view.window?.makeFirstResponder(self)
         refreshAll()
     }
 
@@ -114,6 +122,11 @@ final class MainViewController: NSViewController {
     // MARK: - Setup
 
     func setupUI() {
+
+        playbackController.onFrameAdvanced = { [weak self] frame in
+            guard let self else { return }
+            DispatchQueue.main.async { self.playbackFrameChanged(frame) }
+        }
 
         view.wantsLayer = true
 
@@ -149,7 +162,7 @@ final class MainViewController: NSViewController {
         // Floating panels
         let left =
             createFloatingPanel(
-                title: "キーフレーム"
+                title: "グラフ エディタ"
             )
 
         leftPanel = left.panel

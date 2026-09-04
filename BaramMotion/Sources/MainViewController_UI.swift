@@ -211,8 +211,12 @@ extension MainViewController {
     }
 
     func syncTimelineLayerPanelScroll() {
-        guard let clip = timelineScrollView?.contentView, let panel = timelineLayerPanel else { return }
+        guard let clip = timelineScrollView?.contentView, let panel = timelineLayerPanel else {
+            NSLog("[Baram Motion] ERROR: Timeline sync views unavailable.")
+            return
+        }
         panel.verticalOffset = clip.bounds.origin.y
+        panel.documentHeight = timelineContent?.frame.height ?? 0
         panel.needsDisplay = true
     }
 

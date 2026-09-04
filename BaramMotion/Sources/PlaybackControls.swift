@@ -3,6 +3,7 @@ import SwiftUI
 
 final class PlaybackController: ObservableObject {
     @Published private(set) var currentFrame:Int=0
+    var onFrameAdvanced: ((Int) -> Void)?
     @Published private(set) var totalFrames:Int=1
     @Published private(set) var isPlaying:Bool=false
     private var timer:Timer?
@@ -12,7 +13,7 @@ final class PlaybackController: ObservableObject {
     func setCurrentFrame(_ value:Int,notify:Bool=true){ currentFrame=max(0,min(totalFrames,value)) }
     func step(by delta:Int){setCurrentFrame(currentFrame+delta); NSLog("[Baram Motion] Playback step: %d",currentFrame)}
     func togglePlay(){isPlaying ? stop():start()}
-    private func start(){ guard !isPlaying else{return}; if currentFrame>=totalFrames{currentFrame=0}; isPlaying=true; timer=Timer.scheduledTimer(withTimeInterval:frameInterval,repeats:true){[weak self] _ in guard let self else{return}; if currentFrame>=totalFrames{stop()}else{currentFrame += 1}} }
+    private func start(){ guard !isPlaying else{return}; if currentFrame>=totalFrames{currentFrame=0}; isPlaying=true; onFrameAdvanced?(currentFrame); timer=Timer.scheduledTimer(withTimeInterval:frameInterval,repeats:true){[weak self] _ in guard let self else{return}; if currentFrame>=totalFrames{stop()}else{currentFrame += 1; onFrameAdvanced?(currentFrame)}} }
     func stop(){timer?.invalidate();timer=nil;isPlaying=false}
 }
 

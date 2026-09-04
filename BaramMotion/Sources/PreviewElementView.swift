@@ -9,6 +9,7 @@ final class PreviewElementView: NSView {
     var text: String  =  "" { didSet { needsDisplay  =  true } }
     var isOn: Bool  =  true { didSet { updateSwitchView() } }
     var switchTint: Color  =  .accentColor { didSet { updateSwitchView() } }
+    var cornerRadius: CGFloat = 8 { didSet { layer?.cornerRadius = cornerRadius; needsDisplay = true } }
 
     var onSelect: ((UUID) -> Void)?
     var onBeginMove: ((UUID) -> Void)?
@@ -54,7 +55,7 @@ final class PreviewElementView: NSView {
             NSString(string:text).draw(in: bounds.insetBy(dx:2,dy:0), withAttributes:attrs)
         case .rectangle:
             backgroundColor.setFill()
-            NSBezierPath(roundedRect:bounds,xRadius:8,yRadius:8).fill()
+            NSBezierPath(roundedRect:bounds,xRadius:min(cornerRadius,bounds.width/2),yRadius:min(cornerRadius,bounds.height/2)).fill()
         case .toggle: break
         }
     }
@@ -114,17 +115,25 @@ private struct PreviewSwitchView: View {
     private let gestureState  =  PreviewSwitchGestureState()
 
     var body: some View {
-        Toggle("", isOn: isOn)
-            .toggleStyle(.switch)
-            .tint(tint)
-            .labelsHidden()
-            .frame(maxWidth:.infinity,maxHeight:.infinity)
-            .simultaneousGesture(TapGesture().onEnded{ onSelect() })
-            .simultaneousGesture(DragGesture(minimumDistance:4).onChanged{ value in
-                if gestureState.last == .zero { onBeginMove() }
-                onMove(CGPoint(x:value.translation.width-gestureState.last.width,y:value.translation.height-gestureState.last.height))
-                gestureState.last = value.translation
-            }.onEnded{ _ in gestureState.last = .zero; onEndMove() })
+        GeometryReader { proxy in
+            let baseWidth: CGFloat = 52
+            let baseHeight: CGFloat = 32
+            let scale = min(max(proxy.size.width / baseWidth, 0.01), max(proxy.size.height / baseHeight, 0.01))
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .tint(tint)
+                .labelsHidden()
+                .frame(width: baseWidth, height: baseHeight)
+                .scaleEffect(scale)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { onSelect() })
+                .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { value in
+                    if gestureState.last == .zero { onBeginMove() }
+                    onMove(CGPoint(x: value.translation.width - gestureState.last.width, y: value.translation.height - gestureState.last.height))
+                    gestureState.last = value.translation
+                }.onEnded { _ in gestureState.last = .zero; onEndMove() })
+        }
     }
 }
 

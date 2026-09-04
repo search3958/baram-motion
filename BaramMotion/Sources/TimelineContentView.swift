@@ -18,6 +18,7 @@ final class TimelineContentView: NSView {
     private let timelineScale:CGFloat = 90
     private let edgeHitWidth:CGFloat = 8
     private let minimumDuration:CGFloat = 1.0/30.0
+    private var scrubbingPlayhead = false
     private enum Interaction { case none, move, resizeLeft, resizeRight }
     private var interaction:Interaction  =  .none
     private var activeLayerID:UUID?
@@ -82,6 +83,7 @@ final class TimelineContentView: NSView {
         let x = CGFloat(currentFrame)/30*timelineScale
         guard x>=0 && x<=bounds.width else{return}
         NSColor.controlAccentColor.setStroke(); ctx.setLineWidth(2); ctx.move(to:CGPoint(x:x,y:0)); ctx.addLine(to:CGPoint(x:x,y:bounds.height)); ctx.strokePath()
+        let knob = NSBezierPath(); knob.move(to:NSPoint(x:x-7,y:0)); knob.line(to:NSPoint(x:x+7,y:0)); knob.line(to:NSPoint(x:x,y:10)); knob.close(); NSColor.controlAccentColor.setFill(); knob.fill()
     }
 
     override func resetCursorRects() {
@@ -100,6 +102,7 @@ final class TimelineContentView: NSView {
     override func mouseDown(with event:NSEvent) {
         let p = convert(event.locationInWindow,from:nil)
         if p.y > contentHeight-rulerHeight {
+            scrubbingPlayhead = true
             delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*30).rounded())))
             return
         }
@@ -112,15 +115,22 @@ final class TimelineContentView: NSView {
         if hit.rect.width >= 20 && localX <= edgeHitWidth { interaction = .resizeLeft }
         else if hit.rect.width >= 20 && localX >= hit.rect.width-edgeHitWidth { interaction = .resizeRight }
         else { interaction = .move }
-        // Double-click clip creates a transform keyframe at its clicked time.
-        if event.clickCount >= 2 { delegate?.timelineContentView(self,didRequestAddKeyframe:hit.layer.id,frame:max(0,Int((p.x/timelineScale*30).rounded()))) ; interaction = .none; return }
+        if event.clickCount >= 2 {
+            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*30).rounded())))
+            interaction = .none
+            return
+        }
         activeLayerID = hit.layer.id; dragStartMouseX = p.x; dragStartMouseY = p.y; originalStartTime = hit.layer.startTime; originalDuration = hit.layer.duration
         delegate?.timelineContentView(self,didBeginEditingLayer:hit.layer.id)
     }
 
     override func mouseDragged(with event:NSEvent) {
-        guard interaction != .none, let activeLayerID, let active = layers.first(where:{$0.id==activeLayerID}) else{return}
         let p = convert(event.locationInWindow,from:nil)
+        if scrubbingPlayhead {
+            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*30).rounded())))
+            return
+        }
+        guard interaction != .none, let activeLayerID, let active = layers.first(where:{$0.id==activeLayerID}) else{return}
         let deltaTime = round(((p.x-dragStartMouseX)/timelineScale)*30)/30
         var start = originalStartTime, duration = originalDuration
         switch interaction {
@@ -134,6 +144,7 @@ final class TimelineContentView: NSView {
     }
 
     override func mouseUp(with event:NSEvent) {
+        if scrubbingPlayhead { scrubbingPlayhead = false; return }
         if let activeLayerID { delegate?.timelineContentView(self,didFinishEditingLayer:activeLayerID) }
         interaction = .none; activeLayerID = nil; resetCursorRects()
     }

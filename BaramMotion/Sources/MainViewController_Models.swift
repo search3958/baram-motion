@@ -39,16 +39,61 @@ extension MainViewController {
         var height: CGFloat
     }
 
-    struct TransformKeyframe: Equatable {
-        var frame: Int
-        var x: CGFloat
-        var y: CGFloat
-        var width: CGFloat
-        var height: CGFloat
-        var easing: KeyframeEasing = .linear
+    struct ColorValue: Equatable {
+        var r: CGFloat
+        var g: CGFloat
+        var b: CGFloat
+        var a: CGFloat
 
-        var value: TransformValue {
-            TransformValue(x: x, y: y, width: width, height: height)
+        func nsColor() -> NSColor { NSColor(calibratedRed: r, green: g, blue: b, alpha: a) }
+        var brightness: CGFloat { max(0, min(1, 0.2126*r + 0.7152*g + 0.0722*b)) }
+        static func from(_ color: NSColor) -> ColorValue {
+            let c = color.usingColorSpace(.deviceRGB) ?? color.usingColorSpace(.sRGB) ?? color
+            return ColorValue(r: c.redComponent, g: c.greenComponent, b: c.blueComponent, a: c.alphaComponent)
+        }
+    }
+
+    enum AnimatedProperty: String, CaseIterable {
+        case x = "X"
+        case y = "Y"
+        case width = "幅"
+        case height = "高さ"
+        case cornerRadius = "角丸"
+        case color = "カラー"
+        case text = "テキスト"
+        case isOn = "Switch状態"
+
+        var isNumeric: Bool {
+            switch self {
+            case .x, .y, .width, .height, .cornerRadius, .color: return true
+            case .text, .isOn: return false
+            }
+        }
+    }
+
+    struct PropertyKeyframe: Equatable {
+        var frame: Int
+        var property: AnimatedProperty
+        var scalar: CGFloat
+        var text: String
+        var boolValue: Bool
+        var colorValue: ColorValue?
+        var easing: KeyframeEasing = .easeInOut
+
+        static func scalar(_ property: AnimatedProperty, frame: Int, value: CGFloat, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+            PropertyKeyframe(frame: frame, property: property, scalar: value, text: "", boolValue: false, colorValue: nil, easing: easing)
+        }
+
+        static func text(_ frame: Int, value: String, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+            PropertyKeyframe(frame: frame, property: .text, scalar: 0, text: value, boolValue: false, colorValue: nil, easing: easing)
+        }
+
+        static func state(_ frame: Int, value: Bool, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+            PropertyKeyframe(frame: frame, property: .isOn, scalar: 0, text: "", boolValue: value, colorValue: nil, easing: easing)
+        }
+
+        static func color(_ frame: Int, value: ColorValue, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+            PropertyKeyframe(frame: frame, property: .color, scalar: value.brightness, text: "", boolValue: false, colorValue: value, easing: easing)
         }
     }
 
@@ -66,6 +111,14 @@ extension MainViewController {
         static let timelineBackground = NSColor.controlBackgroundColor
         static let timelineAlternateBackground = NSColor.underPageBackgroundColor
         static let previewBackground = NSColor.black
+        static let graphX = NSColor.systemRed
+        static let graphY = NSColor.systemGreen
+        static let graphWidth = NSColor.systemBlue
+        static let graphHeight = NSColor.systemOrange
+        static let graphCornerRadius = NSColor.systemPurple
+        static let graphColor = NSColor.systemTeal
+        static let graphText = NSColor.systemPink
+        static let graphSwitch = NSColor.systemYellow
     }
 
     final class LayerModel {
@@ -73,30 +126,34 @@ extension MainViewController {
         var kind: LayerKind
         var name: String
         var color: NSColor
+        var text: String
         var x: CGFloat
         var y: CGFloat
         var width: CGFloat
         var height: CGFloat
+        var cornerRadius: CGFloat
         var fontSize: CGFloat
         var anchor: PositionAnchor
         var startTime: CGFloat
         var duration: CGFloat
         var isOn: Bool
         var isVisible: Bool
-        var keyframes: [TransformKeyframe]
+        var propertyKeyframes: [PropertyKeyframe]
 
         init(
-            id: UUID = UUID(), kind: LayerKind, name: String, color: NSColor,
+            id: UUID = UUID(), kind: LayerKind, name: String, color: NSColor, text: String? = nil,
             x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
+            cornerRadius: CGFloat = 8,
             fontSize: CGFloat = 56, anchor: PositionAnchor = .topLeft,
             startTime: CGFloat = 0, duration: CGFloat = 5, isOn: Bool = true,
-            isVisible: Bool = true, keyframes: [TransformKeyframe] = []
+            isVisible: Bool = true, propertyKeyframes: [PropertyKeyframe] = []
         ) {
             self.id=id; self.kind=kind; self.name=name; self.color=color
-            self.x=x; self.y=y; self.width=width; self.height=height
+            self.text=text ?? (kind == .text ? name : "")
+            self.x=x; self.y=y; self.width=width; self.height=height; self.cornerRadius=max(0,cornerRadius)
             self.fontSize=fontSize; self.anchor=anchor; self.startTime=startTime
             self.duration=duration; self.isOn=isOn; self.isVisible=isVisible
-            self.keyframes=keyframes.sorted { $0.frame < $1.frame }
+            self.propertyKeyframes = propertyKeyframes.sorted { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
         }
 
         func currentTransform() -> TransformValue {
@@ -104,10 +161,10 @@ extension MainViewController {
         }
 
         func copyLayer() -> LayerModel {
-            LayerModel(id:id, kind:kind, name:name, color:color, x:x, y:y,
-                       width:width, height:height, fontSize:fontSize, anchor:anchor,
+            LayerModel(id:id, kind:kind, name:name, color:color, text:text, x:x, y:y,
+                       width:width, height:height, cornerRadius:cornerRadius, fontSize:fontSize, anchor:anchor,
                        startTime:startTime, duration:duration, isOn:isOn,
-                       isVisible:isVisible, keyframes:keyframes)
+                       isVisible:isVisible, propertyKeyframes:propertyKeyframes)
         }
     }
 

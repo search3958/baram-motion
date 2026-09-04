@@ -58,6 +58,7 @@ extension MainViewController {
                 kind: .text,
                 name: "Text \(count)",
                 color: NSColor.white,
+                text: "Text \(count)",
                 x: 760,
                 y: 430,
                 width: 400,
@@ -269,13 +270,19 @@ extension MainViewController {
         let before =
             captureSnapshot()
 
-        layer.color =
-            sender.color
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .color && $0.frame == frame }) {
+            let cv = ColorValue.from(sender.color)
+            layer.propertyKeyframes[idx].colorValue = cv
+            layer.propertyKeyframes[idx].scalar = cv.brightness
+        } else if layer.propertyKeyframes.contains(where: { $0.property == .color }) {
+            layer.propertyKeyframes.append(.color(frame, value: ColorValue.from(sender.color)))
+            normalizeKeyframes(layer)
+        } else {
+            layer.color = sender.color
+        }
 
-        finishMutation(
-            before: before,
-            actionName: "カラー変更"
-        )
+        finishMutation(before: before, actionName: "カラー変更")
 
         NSLog(
             "[Baram Motion] Color changed."
@@ -343,122 +350,45 @@ extension MainViewController {
     }
 
     @objc
-    func positionFieldChanged(
-        _ sender: NSTextField
-    ) {
-
-        guard let layer =
-                selectedLayer else {
-
-            NSLog(
-                "[Baram Motion] ERROR: No selected layer for position change."
-            )
-
-            return
-        }
-
-        guard let value =
-                Double(sender.stringValue),
-              value.isFinite else {
-
-            NSLog(
-                "[Baram Motion] ERROR: Invalid position value."
-            )
-
-            refreshInspectorValues()
-
-            return
-        }
-
-        let before =
-            captureSnapshot()
-
-        let targetFrame = playbackController.currentFrame
-        if !layer.keyframes.isEmpty && layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) == nil {
-            let evaluated = evaluatedTransform(for: layer, frame: targetFrame)
-            layer.keyframes.append(TransformKeyframe(frame: targetFrame, x: evaluated.x, y: evaluated.y, width: evaluated.width, height: evaluated.height))
-            layer.keyframes.sort { $0.frame < $1.frame }
-            NSLog("[Baram Motion] Auto-created transform keyframe at frame %d", targetFrame)
-        }
-        if let keyframeIndex = layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) {
-            if sender === xField { layer.keyframes[keyframeIndex].x = CGFloat(value) }
-            if sender === yField { layer.keyframes[keyframeIndex].y = CGFloat(value) }
+    func positionFieldChanged(_ sender: NSTextField) {
+        guard let layer = selectedLayer else { NSLog("[Baram Motion] ERROR: No selected layer for position change."); return }
+        guard let number = Double(sender.stringValue), number.isFinite else { NSLog("[Baram Motion] ERROR: Invalid position value."); refreshInspectorValues(); return }
+        let property: AnimatedProperty = sender === xField ? .x : .y
+        let before = captureSnapshot()
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) {
+            layer.propertyKeyframes[idx].scalar = CGFloat(number)
+        } else if layer.propertyKeyframes.contains(where: { $0.property == property }) {
+            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: CGFloat(number)))
         } else {
-            if sender === xField { layer.x = CGFloat(value) }
-            if sender === yField { layer.y = CGFloat(value) }
+            if property == .x { layer.x = CGFloat(number) } else { layer.y = CGFloat(number) }
             clampLayerPosition(layer)
         }
-
-        finishMutation(
-            before: before,
-            actionName: "位置変更"
-        )
-
-        NSLog(
-            "[Baram Motion] Position changed: %.1f, %.1f",
-            layer.x,
-            layer.y
-        )
+        finishMutation(before: before, actionName: "\(property.rawValue) 変更")
+        NSLog("[Baram Motion] Position property changed %@ frame=%d", property.rawValue, frame)
     }
 
     @objc
-    func sizeFieldChanged(
-        _ sender: NSTextField
-    ) {
-
-        guard let layer =
-                selectedLayer else {
-
-            NSLog(
-                "[Baram Motion] ERROR: No selected layer for size change."
-            )
-
-            return
-        }
-
-        guard let value =
-                Double(sender.stringValue),
-              value.isFinite,
-              value > 1 else {
-
-            NSLog(
-                "[Baram Motion] ERROR: Invalid size value."
-            )
-
-            refreshInspectorValues()
-
-            return
-        }
-
-        let before =
-            captureSnapshot()
-
-        let targetFrame = playbackController.currentFrame
-        if !layer.keyframes.isEmpty && layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) == nil {
-            let evaluated = evaluatedTransform(for: layer, frame: targetFrame)
-            layer.keyframes.append(TransformKeyframe(frame: targetFrame, x: evaluated.x, y: evaluated.y, width: evaluated.width, height: evaluated.height))
-            layer.keyframes.sort { $0.frame < $1.frame }
-            NSLog("[Baram Motion] Auto-created transform keyframe at frame %d", targetFrame)
-        }
-        if let keyframeIndex = layer.keyframes.firstIndex(where: { $0.frame == targetFrame }) {
-            if sender === widthField { layer.keyframes[keyframeIndex].width = max(1, CGFloat(value)) }
-            if sender === heightField { layer.keyframes[keyframeIndex].height = max(1, CGFloat(value)) }
+    func sizeFieldChanged(_ sender: NSTextField) {
+        guard let layer = selectedLayer else { NSLog("[Baram Motion] ERROR: No selected layer for size change."); return }
+        guard let number = Double(sender.stringValue), number.isFinite, number > 0 else { NSLog("[Baram Motion] ERROR: Invalid size value."); refreshInspectorValues(); return }
+        let property: AnimatedProperty = sender === heightField ? .height : .width
+        let value = max(1, CGFloat(number))
+        let before = captureSnapshot()
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) {
+            layer.propertyKeyframes[idx].scalar = value
+        } else if layer.propertyKeyframes.contains(where: { $0.property == property }) {
+            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: value))
+        } else if property == .width {
+            layer.width = value
+            clampLayerPosition(layer)
         } else {
-            if sender === widthField { layer.width = CGFloat(value) }
-            if sender === heightField { layer.height = CGFloat(value) }
-            layer.width=max(1,layer.width); layer.height=max(1,layer.height); clampLayerPosition(layer)
+            layer.height = value
+            clampLayerPosition(layer)
         }
-
-        finishMutation(
-            before: before,
-            actionName: "サイズ変更"
-        )
-
-        NSLog(
-            "[Baram Motion] Size changed: %.1f x %.1f",
-            layer.width,
-            layer.height
-        )
+        finishMutation(before: before, actionName: "\(property.rawValue) 変更")
+        NSLog("[Baram Motion] Size property changed %@ frame=%d value=%.1f", property.rawValue, frame, value)
     }
 
     @objc
@@ -511,48 +441,39 @@ extension MainViewController {
         )
     }
 
-    func setSwitchState(
-        for layerID: UUID,
-        isOn: Bool
-    ) {
-
-        guard let layer = layers.first(where: { $0.id == layerID }) else {
-            NSLog(
-                "[Baram Motion] ERROR: SwiftUI Toggle layer not found: %@",
-                layerID.uuidString
-            )
-            return
-        }
-
-        guard layer.kind == .toggle else {
-            NSLog(
-                "[Baram Motion] ERROR: SwiftUI Toggle target is not a switch: %@",
-                layer.name
-            )
-            return
-        }
-
-        guard layer.isOn != isOn else {
-            NSLog(
-                "[Baram Motion] SwiftUI Toggle unchanged: %@",
-                layer.name
-            )
-            return
-        }
-
+    @objc func textContentChanged(_ sender: NSTextField) {
+        guard let layer = selectedLayer, layer.kind == .text else { return }
         let before = captureSnapshot()
-        layer.isOn = isOn
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .text && $0.frame == frame }) {
+            layer.propertyKeyframes[idx].text = sender.stringValue
+        } else if layer.propertyKeyframes.contains(where: { $0.property == .text }) {
+            layer.propertyKeyframes.append(.text(frame, value: sender.stringValue))
+        } else {
+            layer.text = sender.stringValue
+        }
+        layer.propertyKeyframes.sort { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
+        finishMutation(before: before, actionName: "テキスト変更")
+        NSLog("[Baram Motion] Text changed at frame %d: %@", frame, sender.stringValue)
+    }
 
-        finishMutation(
-            before: before,
-            actionName: "Switch状態変更"
-        )
-
-        NSLog(
-            "[Baram Motion] SwiftUI Toggle state changed %@: %@",
-            layer.name,
-            layer.isOn ? "ON" : "OFF"
-        )
+    func setSwitchState(for id: UUID, isOn: Bool) {
+        guard let layer = layers.first(where: { $0.id == id }), layer.kind == .toggle else {
+            NSLog("[Baram Motion] ERROR: Switch layer not found."); return
+        }
+        guard evaluatedSwitchState(for: layer, frame: playbackController.currentFrame) != isOn else { return }
+        let before = captureSnapshot()
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .isOn && $0.frame == frame }) {
+            layer.propertyKeyframes[idx].boolValue = isOn
+        } else if layer.propertyKeyframes.contains(where: { $0.property == .isOn }) {
+            layer.propertyKeyframes.append(.state(frame, value: isOn))
+        } else {
+            layer.isOn = isOn
+        }
+        layer.propertyKeyframes.sort { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
+        finishMutation(before: before, actionName: "Switch状態変更")
+        NSLog("[Baram Motion] Switch state changed: %@ frame=%d state=%@", layer.name, frame, isOn ? "ON" : "OFF")
     }
 
     // MARK: - Playback
@@ -619,44 +540,22 @@ extension MainViewController {
         )
     }
 
-    func movePreviewLayer(
-        _ id: UUID,
-        deltaX: CGFloat,
-        deltaY: CGFloat
-    ) {
-        guard let layer = layers.first(where: { $0.id == id }) else {
-            NSLog("[Baram Motion] ERROR: Preview move layer not found.")
-            return
-        }
-
-        if !layer.keyframes.isEmpty && !hasKeyframe(layer) {
-            let evaluated=evaluatedTransform(for:layer,frame:playbackController.currentFrame)
-            layer.keyframes.append(TransformKeyframe(frame:playbackController.currentFrame,x:evaluated.x,y:evaluated.y,width:evaluated.width,height:evaluated.height))
-            layer.keyframes.sort{$0.frame<$1.frame}
-            NSLog("[Baram Motion] Auto-created transform keyframe for preview drag at frame %d", playbackController.currentFrame)
-        }
-        if !layer.keyframes.isEmpty {
-            guard let index=layer.keyframes.firstIndex(where:{$0.frame==playbackController.currentFrame}) else { return }
-            layer.keyframes[index].x += deltaX
-            layer.keyframes[index].y -= deltaY
-            layer.keyframes[index].width=max(1,layer.keyframes[index].width)
-            layer.keyframes[index].height=max(1,layer.keyframes[index].height)
+    func movePreviewLayer(_ id: UUID, deltaX: CGFloat, deltaY: CGFloat) {
+        guard let layer = layers.first(where: { $0.id == id }) else { NSLog("[Baram Motion] ERROR: Preview move layer not found."); return }
+        let frame = playbackController.currentFrame
+        let animatedX = layer.propertyKeyframes.contains(where: { $0.property == .x })
+        let animatedY = layer.propertyKeyframes.contains(where: { $0.property == .y })
+        if animatedX || animatedY {
+            if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .x && $0.frame == frame }) { layer.propertyKeyframes[idx].scalar += deltaX }
+            else { layer.propertyKeyframes.append(.scalar(.x, frame: frame, value: evaluatedTransform(for: layer, frame: frame).x + deltaX)) }
+            if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .y && $0.frame == frame }) { layer.propertyKeyframes[idx].scalar -= deltaY }
+            else { layer.propertyKeyframes.append(.scalar(.y, frame: frame, value: evaluatedTransform(for: layer, frame: frame).y - deltaY)) }
+            layer.propertyKeyframes.sort { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
         } else {
-            layer.x += deltaX
-            layer.y -= deltaY
-            clampLayerPosition(layer)
+            layer.x += deltaX; layer.y -= deltaY; clampLayerPosition(layer)
         }
-
-        refreshPreview()
-        refreshInspectorValues()
-        refreshKeyframeInspector()
-
-        NSLog(
-            "[Baram Motion] Preview position changed %@: x=%.1f y=%.1f",
-            layer.name,
-            layer.x,
-            layer.y
-        )
+        refreshPreview(); refreshInspectorValues(); refreshKeyframeInspector()
+        NSLog("[Baram Motion] Preview position changed %@ frame=%d", layer.name, frame)
     }
 
     func finishPreviewLayerEditing(_ id: UUID) {
@@ -843,7 +742,7 @@ extension MainViewController {
                 left.duration != right.duration ||
                 left.isOn != right.isOn ||
                 left.isVisible != right.isVisible ||
-                left.keyframes != right.keyframes {
+                left.propertyKeyframes != right.propertyKeyframes {
 
                 return true
             }
