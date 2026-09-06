@@ -47,10 +47,13 @@ final class KeyframeGraphView: NSView {
         let property: MainViewController.AnimatedProperty
         let frame: Int
         let handleIndex: Int
-        let startPoint: CGPoint
         let startHandle: CGPoint
+        let startMouse: CGPoint
+        let frameRangePixels: CGFloat
+        let valueRangePixels: CGFloat
     }
 
+    override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -118,7 +121,13 @@ final class KeyframeGraphView: NSView {
         for (index, key) in keys.enumerated() {
             let point = coords[index]
             drawDiamond(at: point, filled: true, color: color, selected: selectedProperty == property && selectedKeyframeFrame == key.frame)
-            drawHandlePoints(layer: layer, property: property, key: key, index: index, keys: keys, color: color)
+            if index < keys.count - 1 {
+                let nextPoint = coords[index + 1]
+                drawHandleLines(layer: layer, property: property, key: key, nextKey: keys[index + 1], point: point, nextPoint: nextPoint, color: color)
+                drawHandlePoints(layer: layer, property: property, key: key, nextKey: keys[index + 1], point: point, nextPoint: nextPoint, color: color)
+            } else {
+                drawHandlePoints(layer: layer, property: property, key: key, nextKey: nil, point: point, nextPoint: point, color: color)
+            }
         }
         let label = property.rawValue
         let p = coords.last ?? .zero
@@ -134,8 +143,8 @@ final class KeyframeGraphView: NSView {
         for i in 0..<points.count - 1 {
             let p0 = points[i]
             let p3 = points[i + 1]
-            let cp1 = handlePoint(for: keys[i], nextKey: keys[i + 1], point: p0, nextPoint: p3, isStart: true)
-            let cp2 = handlePoint(for: keys[i], nextKey: keys[i + 1], point: p0, nextPoint: p3, isStart: false)
+            let cp1 = graphHandlePoint(key: keys[i], nextKey: keys[i + 1], point: p0, nextPoint: p3, isStart: true)
+            let cp2 = graphHandlePoint(key: keys[i], nextKey: keys[i + 1], point: p0, nextPoint: p3, isStart: false)
             path.curve(to: p3, controlPoint1: cp1, controlPoint2: cp2)
         }
         color.withAlphaComponent(0.72).setStroke()
@@ -143,32 +152,48 @@ final class KeyframeGraphView: NSView {
         path.stroke()
     }
 
-    private func handlePoint(for key: MainViewController.PropertyKeyframe, nextKey: MainViewController.PropertyKeyframe, point: CGPoint, nextPoint: CGPoint, isStart: Bool) -> CGPoint {
-        let easing = key.easing
-        let frameRange = CGFloat(max(1, nextKey.frame - key.frame))
-        let valueRange = nextPoint.y - point.y
-        let cp = isStart ? easing.cp1 : easing.cp2
-        return CGPoint(x: point.x + cp.x * frameRange, y: point.y + cp.y * valueRange)
+    private func graphHandlePoint(key: MainViewController.PropertyKeyframe, nextKey: MainViewController.PropertyKeyframe, point: CGPoint, nextPoint: CGPoint, isStart: Bool) -> CGPoint {
+        let easing = isStart ? key.easing.cp1 : key.easing.cp2
+        let dx = max(1, CGFloat(nextKey.frame - key.frame)) * timeScale
+        let dy = nextPoint.y - point.y
+        return CGPoint(
+            x: point.x + easing.x * dx,
+            y: point.y + easing.y * dy
+        )
     }
 
-    private func drawHandlePoints(layer: MainViewController.LayerModel, property: MainViewController.AnimatedProperty, key: MainViewController.PropertyKeyframe, index: Int, keys: [MainViewController.PropertyKeyframe], color: NSColor) {
-        guard index < keys.count - 1 else { return }
-        let nextKey = keys[index + 1]
-        let point = CGPoint(x: frameToX(key.frame), y: valueToY(graphValue(for: key, property: property)))
-        let nextPoint = CGPoint(x: frameToX(nextKey.frame), y: valueToY(graphValue(for: nextKey, property: property)))
-        let frameRange = CGFloat(max(1, nextKey.frame - key.frame))
-        let valueRange = nextPoint.y - point.y
+    private func drawHandleLines(layer: MainViewController.LayerModel, property: MainViewController.AnimatedProperty, key: MainViewController.PropertyKeyframe, nextKey: MainViewController.PropertyKeyframe, point: CGPoint, nextPoint: CGPoint, color: NSColor) {
+        let cp1 = graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: true)
+        let cp2 = graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: false)
 
-        for (handleIndex, cp) in [key.easing.cp1, key.easing.cp2].enumerated() {
-            let hx = point.x + cp.x * frameRange
-            let hy = point.y + cp.y * valueRange
-            let isSelected = selectedProperty == property && selectedKeyframeFrame == key.frame
-            drawHandle(at: CGPoint(x: hx, y: hy), index: handleIndex, selected: isSelected, color: color)
-        }
+        let path1 = NSBezierPath()
+        path1.move(to: point)
+        path1.line(to: cp1)
+        color.withAlphaComponent(0.35).setStroke()
+        path1.lineWidth = 0.8
+        path1.setLineDash([4, 3], count: 2, phase: 0)
+        path1.stroke()
+
+        let path2 = NSBezierPath()
+        path2.move(to: nextPoint)
+        path2.line(to: cp2)
+        color.withAlphaComponent(0.35).setStroke()
+        path2.lineWidth = 0.8
+        path2.setLineDash([4, 3], count: 2, phase: 0)
+        path2.stroke()
     }
 
-    private func drawHandle(at point: CGPoint, index: Int, selected: Bool, color: NSColor) {
-        let r: CGFloat = selected ? 7 : 5
+    private func drawHandlePoints(layer: MainViewController.LayerModel, property: MainViewController.AnimatedProperty, key: MainViewController.PropertyKeyframe, nextKey: MainViewController.PropertyKeyframe?, point: CGPoint, nextPoint: CGPoint, color: NSColor) {
+        guard let nextKey = nextKey else { return }
+        let cp1 = graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: true)
+        let cp2 = graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: false)
+
+        drawHandle(at: cp1, label: "cp1", selected: false, color: color)
+        drawHandle(at: cp2, label: "cp2", selected: false, color: color)
+    }
+
+    private func drawHandle(at point: CGPoint, label: String, selected: Bool, color: NSColor) {
+        let r: CGFloat = 6
         let p = NSBezierPath(ovalIn: NSRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2))
         if selected {
             NSColor.white.setFill()
@@ -177,14 +202,19 @@ final class KeyframeGraphView: NSView {
             p.lineWidth = 2
             p.stroke()
         } else {
-            color.withAlphaComponent(0.6).setFill()
+            color.withAlphaComponent(0.7).setFill()
             p.fill()
             color.setStroke()
             p.lineWidth = 1
             p.stroke()
         }
-        let label = index == 0 ? "cp1" : "cp2"
-        NSString(string: label).draw(at: NSPoint(x: point.x + r + 2, y: point.y - 7), withAttributes: [.font: NSFont.systemFont(ofSize: 7), .foregroundColor: color])
+        NSString(string: label).draw(at: NSPoint(x: point.x + r + 3, y: point.y - 7), withAttributes: [.font: NSFont.systemFont(ofSize: 7), .foregroundColor: color])
+    }
+
+    private func drawDiamond(at point: CGPoint, filled: Bool, color: NSColor, selected: Bool) {
+        let r: CGFloat = selected ? 6 : 5
+        let p = NSBezierPath(); p.move(to: NSPoint(x: point.x, y: point.y-r)); p.line(to: NSPoint(x: point.x+r, y: point.y)); p.line(to: NSPoint(x: point.x, y: point.y+r)); p.line(to: NSPoint(x: point.x-r, y: point.y)); p.close()
+        color.setFill(); p.fill(); if selected { NSColor.white.setStroke(); p.lineWidth = 1; p.stroke() }
     }
 
     private func drawPlayhead() {
@@ -227,12 +257,6 @@ final class KeyframeGraphView: NSView {
     private func yToValue(_ y: CGFloat) -> CGFloat { valueCenter + (bounds.midY-y)/max(0.01,valueScale) }
     private func formatGraphValue(_ value: CGFloat) -> String { abs(value.rounded()-value) < 0.01 ? String(Int(value.rounded())) : String(format: "%.1f", Double(value)) }
 
-    private func drawDiamond(at point: CGPoint, filled: Bool, color: NSColor, selected: Bool) {
-        let r: CGFloat = selected ? 6 : 5
-        let p = NSBezierPath(); p.move(to: NSPoint(x: point.x, y: point.y-r)); p.line(to: NSPoint(x: point.x+r, y: point.y)); p.line(to: NSPoint(x: point.x, y: point.y+r)); p.line(to: NSPoint(x: point.x-r, y: point.y)); p.close()
-        color.setFill(); p.fill(); if selected { NSColor.white.setStroke(); p.lineWidth = 1; p.stroke() }
-    }
-
     private func pointFor(layer: MainViewController.LayerModel, property: MainViewController.AnimatedProperty, frame: Int) -> CurvePoint? {
         guard let k = layer.propertyKeyframes.first(where: { $0.property == property && $0.frame == frame }) else { return nil }
         return CurvePoint(layerID: layer.id, property: property, frame: frame, value: graphValue(for: k, property: property), color: colorFor(property))
@@ -240,72 +264,151 @@ final class KeyframeGraphView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if p.y < topAxisHeight + 14 {
-            let frame = xToFrame(p.x); delegate?.keyframeGraph(self, didSelect: selectedProperty ?? .x, frame: frame); return
+        guard p.x.isFinite, p.y.isFinite else {
+            NSLog("[Baram Motion] ERROR: Invalid graph mouse position.")
+            return
         }
+
+        if p.y < topAxisHeight + 14 {
+            let frame = xToFrame(p.x)
+            delegate?.keyframeGraph(self, didSelect: selectedProperty ?? .x, frame: frame)
+            return
+        }
+
         if event.clickCount >= 2 {
             let frame = xToFrame(p.x)
-            guard let property = nearestProperty(to: p) else { return }
+            guard let property = nearestProperty(to: p) else {
+                NSLog("[Baram Motion] WARNING: No property found for graph keyframe insertion.")
+                return
+            }
             selectedProperty = property
             selectedKeyframeFrame = frame
             delegate?.keyframeGraph(self, didAddKeyframeFor: property, at: frame)
             return
         }
+
+        // Handles must win over keyframe points. Hit both CP handles of the selected segment.
         if let handleHit = hitHandle(at: p) {
             handleDrag = handleHit
+            needsDisplay = true
+            NSLog("[Baram Motion] Graph handle drag begin: %@ frame=%d handle=%d", handleHit.property.rawValue, handleHit.frame, handleHit.handleIndex + 1)
             return
         }
-        guard let hit = hitPoint(at: p) else { return }
-        selectedProperty = hit.property; selectedKeyframeFrame = hit.frame
+
+        guard let hit = hitPoint(at: p) else {
+            NSLog("[Baram Motion] Graph mouseDown: no hit at %.1f, %.1f", p.x, p.y)
+            return
+        }
+
+        selectedProperty = hit.property
+        selectedKeyframeFrame = hit.frame
         drag = DragState(point: hit, startPoint: p, startFrame: hit.frame, startValue: hit.value)
         delegate?.keyframeGraph(self, didSelect: hit.property, frame: hit.frame)
+        NSLog("[Baram Motion] Graph keyframe drag begin: %@ frame=%d", hit.property.rawValue, hit.frame)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        guard p.x.isFinite, p.y.isFinite else {
+            NSLog("[Baram Motion] ERROR: Invalid graph drag position.")
+            return
+        }
+
         if let handleDrag {
-            let p = convert(event.locationInWindow, from: nil)
-            guard let layer = layers.first(where: { $0.id == handleDrag.layerID }) else { return }
-            guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == handleDrag.property && $0.frame == handleDrag.frame }) else { return }
-            let frameRange = CGFloat(max(1, layer.propertyKeyframes.first(where: { $0.property == handleDrag.property && $0.frame > handleDrag.frame })?.frame ?? handleDrag.frame + 10 - handleDrag.frame))
-            let valueRange: CGFloat = 1
-            let dx = p.x - handleDrag.startPoint.x
-            let dy = p.y - handleDrag.startPoint.y
-            let newCp1x = max(0, min(1, handleDrag.startHandle.x / frameRange + dx / frameRange))
-            let newCp1y = max(0, min(1, handleDrag.startHandle.y / valueRange + dy / valueRange))
-            if handleDrag.handleIndex == 0 {
-                layer.propertyKeyframes[idx].easing.cp1.x = newCp1x
-                layer.propertyKeyframes[idx].easing.cp1.y = newCp1y
-            } else {
-                layer.propertyKeyframes[idx].easing.cp2.x = newCp1x
-                layer.propertyKeyframes[idx].easing.cp2.y = newCp1y
+            guard let layer = layers.first(where: { $0.id == handleDrag.layerID }) else {
+                NSLog("[Baram Motion] ERROR: Graph handle layer disappeared.")
+                return
             }
+            guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == handleDrag.property && $0.frame == handleDrag.frame }) else {
+                NSLog("[Baram Motion] ERROR: Graph handle keyframe disappeared.")
+                return
+            }
+
+            let dx = p.x - handleDrag.startMouse.x
+            let dy = p.y - handleDrag.startMouse.y
+            let frameRange = max(1, handleDrag.frameRangePixels)
+            let valueRange = handleDrag.valueRangePixels
+
+            var newX = handleDrag.startHandle.x + dx / frameRange
+            var newY = handleDrag.startHandle.y
+            if abs(valueRange) > 0.01 {
+                newY += dy / valueRange
+            }
+
+            // Standard cubic-bezier x is constrained to the segment; y intentionally allows overshoot.
+            newX = max(0, min(1, newX))
+            newY = max(-1, min(2, newY))
+
+            if handleDrag.handleIndex == 0 {
+                layer.propertyKeyframes[idx].easing.cp1 = CGPoint(x: newX, y: newY)
+            } else {
+                layer.propertyKeyframes[idx].easing.cp2 = CGPoint(x: newX, y: newY)
+            }
+
             needsDisplay = true
             return
         }
+
         guard let drag else { return }
-        let p = convert(event.locationInWindow, from: nil)
-        let newFrame = xToFrame(p.x)
+        let deltaX = p.x - drag.startPoint.x
+        let deltaY = p.y - drag.startPoint.y
+        let newFrame = max(0, drag.startFrame + Int(round(deltaX / max(0.1, timeScale))))
         var value: CGFloat? = nil
+
         switch drag.point.property {
-        case .x,.y,.width,.height,.cornerRadius,.color:
-            value = yToValue(p.y)
+        case .x, .y, .width, .height, .cornerRadius, .color:
+            // Graph Y axis is inverted: moving the mouse downward decreases the value.
+            value = drag.startValue - deltaY / max(0.1, valueScale)
             if drag.point.property == .width || drag.point.property == .height { value = max(1, value ?? 1) }
             if drag.point.property == .cornerRadius { value = max(0, value ?? 0) }
             if drag.point.property == .color { value = max(0, min(1, value ?? 0)) }
-        case .isOn: value = yToValue(p.y) >= 0.5 ? 1 : 0
-        case .text: value = nil
+        case .isOn:
+            value = (drag.startValue - deltaY / max(0.1, valueScale)) >= 0.5 ? 1 : 0
+        case .text:
+            value = nil
         }
+
         delegate?.keyframeGraph(self, didMove: drag.point.layerID, property: drag.point.property, fromFrame: drag.startFrame, toFrame: newFrame, value: value)
+        self.drag = DragState(
+            point: drag.point,
+            startPoint: p,
+            startFrame: newFrame,
+            startValue: value ?? drag.startValue
+        )
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let handleDrag {
+            guard let layer = layers.first(where: { $0.id == handleDrag.layerID }),
+                  let key = layer.propertyKeyframes.first(where: { $0.property == handleDrag.property && $0.frame == handleDrag.frame }) else {
+                NSLog("[Baram Motion] ERROR: Graph handle keyframe unavailable at mouseUp.")
+                self.handleDrag = nil
+                self.drag = nil
+                return
+            }
+            delegate?.keyframeGraph(
+                self,
+                didChangeEasingAt: handleDrag.layerID,
+                property: handleDrag.property,
+                frame: handleDrag.frame,
+                easing: key.easing
+            )
+            NSLog("[Baram Motion] Graph easing committed: %@ frame=%d handle=%d", handleDrag.property.rawValue, handleDrag.frame, handleDrag.handleIndex + 1)
+        } else if drag != nil {
+            NSLog("[Baram Motion] Graph keyframe drag end.")
+        }
         drag = nil
         handleDrag = nil
+        needsDisplay = true
     }
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(bounds, cursor: .arrow)
+        if handleDrag != nil {
+            addCursorRect(bounds, cursor: .crosshair)
+        } else {
+            addCursorRect(bounds, cursor: .arrow)
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -357,25 +460,56 @@ final class KeyframeGraphView: NSView {
     }
 
     private func hitHandle(at p: CGPoint) -> HandleDragState? {
-        guard let id = selectedLayerID, let layer = layers.first(where: { $0.id == id }) else { return nil }
-        guard let property = selectedProperty, let frame = selectedKeyframeFrame else { return nil }
-        guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) else { return nil }
-        guard idx < layer.propertyKeyframes.count - 1 else { return nil }
-        let key = layer.propertyKeyframes[idx]
-        let nextKey = layer.propertyKeyframes[idx + 1]
-        let point = CGPoint(x: frameToX(key.frame), y: valueToY(graphValue(for: key, property: property)))
-        let nextPoint = CGPoint(x: frameToX(nextKey.frame), y: valueToY(graphValue(for: nextKey, property: property)))
-        let frameRange = CGFloat(max(1, nextKey.frame - key.frame))
-        let valueRange = nextPoint.y - point.y
+        guard let id = selectedLayerID,
+              let layer = layers.first(where: { $0.id == id }),
+              let property = selectedProperty,
+              let frame = selectedKeyframeFrame else {
+            return nil
+        }
 
-        for (handleIndex, cp) in [key.easing.cp1, key.easing.cp2].enumerated() {
-            let hx = point.x + cp.x * frameRange
-            let hy = point.y + cp.y * valueRange
-            let distance = hypot(hx - p.x, hy - p.y)
-            if distance <= 12 {
-                return HandleDragState(layerID: id, property: property, frame: frame, handleIndex: handleIndex, startPoint: p, startHandle: cp)
+        let keys = layer.propertyKeyframes
+            .filter { $0.property == property }
+            .sorted { $0.frame < $1.frame }
+
+        guard let keyIndex = keys.firstIndex(where: { $0.frame == frame }),
+              keyIndex < keys.count - 1 else {
+            return nil
+        }
+
+        let key = keys[keyIndex]
+        let nextKey = keys[keyIndex + 1]
+        let point = CGPoint(
+            x: frameToX(key.frame),
+            y: valueToY(graphValue(for: key, property: property))
+        )
+        let nextPoint = CGPoint(
+            x: frameToX(nextKey.frame),
+            y: valueToY(graphValue(for: nextKey, property: property))
+        )
+        let frameRangePixels = max(1, CGFloat(nextKey.frame - key.frame) * timeScale)
+        let valueRangePixels = nextPoint.y - point.y
+
+        let handlePoints = [
+            graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: true),
+            graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: false)
+        ]
+
+        for (handleIndex, handlePoint) in handlePoints.enumerated() {
+            let distance = hypot(handlePoint.x - p.x, handlePoint.y - p.y)
+            if distance <= 18 {
+                return HandleDragState(
+                    layerID: id,
+                    property: property,
+                    frame: frame,
+                    handleIndex: handleIndex,
+                    startHandle: handleIndex == 0 ? key.easing.cp1 : key.easing.cp2,
+                    startMouse: p,
+                    frameRangePixels: frameRangePixels,
+                    valueRangePixels: valueRangePixels
+                )
             }
         }
+
         return nil
     }
 

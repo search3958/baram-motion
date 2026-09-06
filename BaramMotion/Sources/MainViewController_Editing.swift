@@ -18,7 +18,8 @@ extension MainViewController {
     }
 
     func selectLayer(
-        _ id: UUID?
+        _ id: UUID?,
+        shouldRefreshPreview: Bool = true
     ) {
 
         selectedLayerID =
@@ -28,6 +29,10 @@ extension MainViewController {
         refreshSelectionAppearance()
         rebuildInspector()
         refreshKeyframeInspector()
+
+        if shouldRefreshPreview {
+            refreshPreview()
+        }
 
         timelineContent.reload(
             layers: timelineProxies,
@@ -554,7 +559,17 @@ extension MainViewController {
         } else {
             layer.x += deltaX; layer.y -= deltaY; clampLayerPosition(layer)
         }
-        refreshPreview(); refreshInspectorValues(); refreshKeyframeInspector()
+        if let element = previewElementViews[id] {
+            let displayLayer = layer.copyLayer()
+            let transform = evaluatedTransform(for: layer, frame: frame)
+            displayLayer.x = transform.x; displayLayer.y = transform.y
+            displayLayer.width = max(1, transform.width); displayLayer.height = max(1, transform.height)
+            displayLayer.cornerRadius = evaluatedCornerRadius(for: layer, frame: frame)
+            element.frame = frameForLayer(displayLayer)
+            element.cornerRadius = displayLayer.cornerRadius
+        }
+        refreshInspectorValues()
+        refreshKeyframeInspector()
         NSLog("[Baram Motion] Preview position changed %@ frame=%d", layer.name, frame)
     }
 

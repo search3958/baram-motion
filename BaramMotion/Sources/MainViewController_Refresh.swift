@@ -127,7 +127,7 @@ extension MainViewController {
             displayLayer.cornerRadius = evaluatedCornerRadius(for: layer, frame: frame)
             element.cornerRadius = displayLayer.cornerRadius
             element.frame=frameForLayer(displayLayer)
-            element.onSelect={ [weak self] id in self?.selectLayer(id) }
+            element.onSelect={ [weak self] id in self?.selectLayer(id, shouldRefreshPreview: false) }
             element.onBeginMove={ [weak self] id in self?.beginPreviewLayerEditing(id) }
             element.onMove={ [weak self] id,delta in self?.movePreviewLayer(id,deltaX:delta.x,deltaY:delta.y) }
             element.onEndMove={ [weak self] id in self?.finishPreviewLayerEditing(id) }
