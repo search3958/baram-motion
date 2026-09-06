@@ -3,8 +3,9 @@ import AppKit
 protocol KeyframeGraphViewDelegate: AnyObject {
     func keyframeGraph(_ graph: KeyframeGraphView, didSelect property: MainViewController.AnimatedProperty, frame: Int)
     func keyframeGraph(_ graph: KeyframeGraphView, didMove layerID: UUID, property: MainViewController.AnimatedProperty, fromFrame: Int, toFrame: Int, value: CGFloat?)
-    func keyframeGraph(_ graph: KeyframeGraphView, didChangeEasingAt layerID: UUID, property: MainViewController.AnimatedProperty, frame: Int, easing: MainViewController.KeyframeEasing)
+    func keyframeGraph(_ graph: KeyframeGraphView, didChangeEasingAt layerID: UUID, property: MainViewController.AnimatedProperty, frame: Int, easing: MainViewController.CubicBezier)
     func keyframeGraph(_ graph: KeyframeGraphView, didAddKeyframeFor property: MainViewController.AnimatedProperty, at frame: Int)
+    func keyframeGraph(_ graph: KeyframeGraphView, didDeleteKeyframeAt layerID: UUID, property: MainViewController.AnimatedProperty, frame: Int)
 }
 
 final class KeyframeGraphView: NSView {
@@ -22,6 +23,7 @@ final class KeyframeGraphView: NSView {
     private var timeOrigin: CGFloat = 0
     private var valueCenter: CGFloat = 0
     private var drag: DragState?
+    private var handleDrag: HandleDragState?
     private var magnificationStartX: CGFloat = 1
     private var magnificationStartY: CGFloat = 1
 
@@ -38,6 +40,15 @@ final class KeyframeGraphView: NSView {
         let startPoint: CGPoint
         let startFrame: Int
         let startValue: CGFloat
+    }
+
+    private struct HandleDragState {
+        let layerID: UUID
+        let property: MainViewController.AnimatedProperty
+        let frame: Int
+        let handleIndex: Int
+        let startPoint: CGPoint
+        let startHandle: CGPoint
     }
 
     override var isFlipped: Bool { true }
@@ -102,19 +113,78 @@ final class KeyframeGraphView: NSView {
             coords.append(CGPoint(x: frameToX(key.frame), y: valueToY(value)))
         }
         if coords.count > 1 {
-            let path = NSBezierPath(); path.move(to: coords[0]);
-            for index in 1..<coords.count { path.line(to: coords[index]) }
-            color.withAlphaComponent(0.72).setStroke(); path.lineWidth = 1.4; path.stroke()
+            drawBezierCurve(points: coords, keys: keys, color: color)
         }
-        for (index,key) in keys.enumerated() {
+        for (index, key) in keys.enumerated() {
             let point = coords[index]
             drawDiamond(at: point, filled: true, color: color, selected: selectedProperty == property && selectedKeyframeFrame == key.frame)
+            drawHandlePoints(layer: layer, property: property, key: key, index: index, keys: keys, color: color)
         }
         let label = property.rawValue
         let p = coords.last ?? .zero
         if p.x > leftAxisWidth + 4 && p.x < bounds.width - 4 {
             NSString(string: label).draw(at: NSPoint(x: p.x + 7, y: p.y - 7), withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .medium), .foregroundColor: color])
         }
+    }
+
+    private func drawBezierCurve(points: [CGPoint], keys: [MainViewController.PropertyKeyframe], color: NSColor) {
+        guard points.count >= 2 else { return }
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        for i in 0..<points.count - 1 {
+            let p0 = points[i]
+            let p3 = points[i + 1]
+            let cp1 = handlePoint(for: keys[i], nextKey: keys[i + 1], point: p0, nextPoint: p3, isStart: true)
+            let cp2 = handlePoint(for: keys[i], nextKey: keys[i + 1], point: p0, nextPoint: p3, isStart: false)
+            path.curve(to: p3, controlPoint1: cp1, controlPoint2: cp2)
+        }
+        color.withAlphaComponent(0.72).setStroke()
+        path.lineWidth = 1.4
+        path.stroke()
+    }
+
+    private func handlePoint(for key: MainViewController.PropertyKeyframe, nextKey: MainViewController.PropertyKeyframe, point: CGPoint, nextPoint: CGPoint, isStart: Bool) -> CGPoint {
+        let easing = key.easing
+        let frameRange = CGFloat(max(1, nextKey.frame - key.frame))
+        let valueRange = nextPoint.y - point.y
+        let cp = isStart ? easing.cp1 : easing.cp2
+        return CGPoint(x: point.x + cp.x * frameRange, y: point.y + cp.y * valueRange)
+    }
+
+    private func drawHandlePoints(layer: MainViewController.LayerModel, property: MainViewController.AnimatedProperty, key: MainViewController.PropertyKeyframe, index: Int, keys: [MainViewController.PropertyKeyframe], color: NSColor) {
+        guard index < keys.count - 1 else { return }
+        let nextKey = keys[index + 1]
+        let point = CGPoint(x: frameToX(key.frame), y: valueToY(graphValue(for: key, property: property)))
+        let nextPoint = CGPoint(x: frameToX(nextKey.frame), y: valueToY(graphValue(for: nextKey, property: property)))
+        let frameRange = CGFloat(max(1, nextKey.frame - key.frame))
+        let valueRange = nextPoint.y - point.y
+
+        for (handleIndex, cp) in [key.easing.cp1, key.easing.cp2].enumerated() {
+            let hx = point.x + cp.x * frameRange
+            let hy = point.y + cp.y * valueRange
+            let isSelected = selectedProperty == property && selectedKeyframeFrame == key.frame
+            drawHandle(at: CGPoint(x: hx, y: hy), index: handleIndex, selected: isSelected, color: color)
+        }
+    }
+
+    private func drawHandle(at point: CGPoint, index: Int, selected: Bool, color: NSColor) {
+        let r: CGFloat = selected ? 7 : 5
+        let p = NSBezierPath(ovalIn: NSRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2))
+        if selected {
+            NSColor.white.setFill()
+            p.fill()
+            color.setStroke()
+            p.lineWidth = 2
+            p.stroke()
+        } else {
+            color.withAlphaComponent(0.6).setFill()
+            p.fill()
+            color.setStroke()
+            p.lineWidth = 1
+            p.stroke()
+        }
+        let label = index == 0 ? "cp1" : "cp2"
+        NSString(string: label).draw(at: NSPoint(x: point.x + r + 2, y: point.y - 7), withAttributes: [.font: NSFont.systemFont(ofSize: 7), .foregroundColor: color])
     }
 
     private func drawPlayhead() {
@@ -125,7 +195,7 @@ final class KeyframeGraphView: NSView {
 
     private func drawSelection() {
         guard let property = selectedProperty, let frame = selectedKeyframeFrame else { return }
-        let text = "\(property.rawValue) • frame \(frame)  |  ←→ 時間  ↑↓ 値  |  ⌥スクロール/ピンチで拡大縮小  |  ダブルクリックで追加"
+        let text = "\(property.rawValue) • frame \(frame)  |  ←→ 時間  ↑↓ 値  |  ⌥スクロール/ピンチで拡大縮小  |  ダブルクリックで追加  |  BackSpaceで削除"
         NSString(string: text).draw(at: NSPoint(x: 8, y: bounds.height - 20), withAttributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor])
     }
 
@@ -181,6 +251,10 @@ final class KeyframeGraphView: NSView {
             delegate?.keyframeGraph(self, didAddKeyframeFor: property, at: frame)
             return
         }
+        if let handleHit = hitHandle(at: p) {
+            handleDrag = handleHit
+            return
+        }
         guard let hit = hitPoint(at: p) else { return }
         selectedProperty = hit.property; selectedKeyframeFrame = hit.frame
         drag = DragState(point: hit, startPoint: p, startFrame: hit.frame, startValue: hit.value)
@@ -188,6 +262,26 @@ final class KeyframeGraphView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let handleDrag {
+            let p = convert(event.locationInWindow, from: nil)
+            guard let layer = layers.first(where: { $0.id == handleDrag.layerID }) else { return }
+            guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == handleDrag.property && $0.frame == handleDrag.frame }) else { return }
+            let frameRange = CGFloat(max(1, layer.propertyKeyframes.first(where: { $0.property == handleDrag.property && $0.frame > handleDrag.frame })?.frame ?? handleDrag.frame + 10 - handleDrag.frame))
+            let valueRange: CGFloat = 1
+            let dx = p.x - handleDrag.startPoint.x
+            let dy = p.y - handleDrag.startPoint.y
+            let newCp1x = max(0, min(1, handleDrag.startHandle.x / frameRange + dx / frameRange))
+            let newCp1y = max(0, min(1, handleDrag.startHandle.y / valueRange + dy / valueRange))
+            if handleDrag.handleIndex == 0 {
+                layer.propertyKeyframes[idx].easing.cp1.x = newCp1x
+                layer.propertyKeyframes[idx].easing.cp1.y = newCp1y
+            } else {
+                layer.propertyKeyframes[idx].easing.cp2.x = newCp1x
+                layer.propertyKeyframes[idx].easing.cp2.y = newCp1y
+            }
+            needsDisplay = true
+            return
+        }
         guard let drag else { return }
         let p = convert(event.locationInWindow, from: nil)
         let newFrame = xToFrame(p.x)
@@ -204,7 +298,10 @@ final class KeyframeGraphView: NSView {
         delegate?.keyframeGraph(self, didMove: drag.point.layerID, property: drag.point.property, fromFrame: drag.startFrame, toFrame: newFrame, value: value)
     }
 
-    override func mouseUp(with event: NSEvent) { drag = nil }
+    override func mouseUp(with event: NSEvent) {
+        drag = nil
+        handleDrag = nil
+    }
 
     override func resetCursorRects() {
         super.resetCursorRects()
@@ -216,10 +313,10 @@ final class KeyframeGraphView: NSView {
         guard let hit = hitPoint(at: p) else { return }
         selectedProperty = hit.property; selectedKeyframeFrame = hit.frame
         let menu = NSMenu()
-        for easing in MainViewController.KeyframeEasing.allCases {
-            let item = NSMenuItem(title: easing.rawValue, action: #selector(selectGraphEasing(_:)), keyEquivalent: "")
+        for (name, bezier) in MainViewController.CubicBezier.presets {
+            let item = NSMenuItem(title: name, action: #selector(selectGraphEasing(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = [hit.layerID.uuidString, hit.property.rawValue, String(hit.frame), easing.rawValue]
+            item.representedObject = [hit.layerID.uuidString, hit.property.rawValue, String(hit.frame), "\(bezier.cp1.x),\(bezier.cp1.y),\(bezier.cp2.x),\(bezier.cp2.y)"]
             menu.addItem(item)
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -228,8 +325,21 @@ final class KeyframeGraphView: NSView {
     @objc private func selectGraphEasing(_ sender: NSMenuItem) {
         guard let values = sender.representedObject as? [String], values.count == 4,
               let id = UUID(uuidString: values[0]), let property = MainViewController.AnimatedProperty(rawValue: values[1]),
-              let frame = Int(values[2]), let easing = MainViewController.KeyframeEasing(rawValue: values[3]) else { return }
-        delegate?.keyframeGraph(self, didChangeEasingAt: id, property: property, frame: frame, easing: easing)
+              let frame = Int(values[2]) else { return }
+        let parts = values[3].split(separator: ",").compactMap { Double($0) }
+        guard parts.count == 4 else { return }
+        let bezier = MainViewController.CubicBezier(cp1: CGPoint(x: parts[0], y: parts[1]), cp2: CGPoint(x: parts[2], y: parts[3]))
+        delegate?.keyframeGraph(self, didChangeEasingAt: id, property: property, frame: frame, easing: bezier)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.characters == "\u{8}" || event.characters == "\u{7f}" {
+            if let property = selectedProperty, let frame = selectedKeyframeFrame, let id = selectedLayerID {
+                delegate?.keyframeGraph(self, didDeleteKeyframeAt: id, property: property, frame: frame)
+            }
+            return
+        }
+        super.keyDown(with: event)
     }
 
     private func hitPoint(at p: CGPoint) -> CurvePoint? {
@@ -244,6 +354,29 @@ final class KeyframeGraphView: NSView {
             }
         }
         return best?.0
+    }
+
+    private func hitHandle(at p: CGPoint) -> HandleDragState? {
+        guard let id = selectedLayerID, let layer = layers.first(where: { $0.id == id }) else { return nil }
+        guard let property = selectedProperty, let frame = selectedKeyframeFrame else { return nil }
+        guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) else { return nil }
+        guard idx < layer.propertyKeyframes.count - 1 else { return nil }
+        let key = layer.propertyKeyframes[idx]
+        let nextKey = layer.propertyKeyframes[idx + 1]
+        let point = CGPoint(x: frameToX(key.frame), y: valueToY(graphValue(for: key, property: property)))
+        let nextPoint = CGPoint(x: frameToX(nextKey.frame), y: valueToY(graphValue(for: nextKey, property: property)))
+        let frameRange = CGFloat(max(1, nextKey.frame - key.frame))
+        let valueRange = nextPoint.y - point.y
+
+        for (handleIndex, cp) in [key.easing.cp1, key.easing.cp2].enumerated() {
+            let hx = point.x + cp.x * frameRange
+            let hy = point.y + cp.y * valueRange
+            let distance = hypot(hx - p.x, hy - p.y)
+            if distance <= 12 {
+                return HandleDragState(layerID: id, property: property, frame: frame, handleIndex: handleIndex, startPoint: p, startHandle: cp)
+            }
+        }
+        return nil
     }
 
     private func nearestProperty(to p: CGPoint) -> MainViewController.AnimatedProperty? {

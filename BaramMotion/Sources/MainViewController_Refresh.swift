@@ -41,7 +41,7 @@ extension MainViewController {
         let a = keys[next - 1], b = keys[next]
         let range = CGFloat(max(1, b.frame - a.frame))
         let raw = CGFloat(frame - a.frame) / range
-        return lerp(a.scalar, b.scalar, easedProgress(raw, easing: a.easing))
+        return lerp(a.scalar, b.scalar, a.easing.solve(raw))
     }
 
     func evaluatedTransform(for layer: LayerModel, frame: Int) -> TransformValue {
@@ -95,20 +95,11 @@ extension MainViewController {
         let a = keys[nextIndex - 1].colorValue ?? ColorValue.from(layer.color)
         let b = keys[nextIndex].colorValue ?? a
         let raw = CGFloat(frame - keys[nextIndex - 1].frame) / CGFloat(max(1, keys[nextIndex].frame - keys[nextIndex - 1].frame))
-        let t = easedProgress(raw, easing: keys[nextIndex - 1].easing)
+        let t = keys[nextIndex - 1].easing.solve(raw)
         return ColorValue(r: a.r+(b.r-a.r)*t, g:a.g+(b.g-a.g)*t, b:a.b+(b.b-a.b)*t, a:a.a+(b.a-a.a)*t).nsColor()
     }
 
-    func easedProgress(_ value: CGFloat, easing: KeyframeEasing) -> CGFloat {
-        let t=max(0,min(1,value))
-        switch easing {
-        case .linear: return t
-        case .easeIn: return t*t
-        case .easeOut: return 1-(1-t)*(1-t)
-        case .easeInOut:
-            return t < 0.5 ? 2*t*t : 1-pow(-2*t+2,2)/2
-        }
-    }
+
 
     private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a+(b-a)*t }
 

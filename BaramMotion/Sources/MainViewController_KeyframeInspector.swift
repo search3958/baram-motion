@@ -95,9 +95,19 @@ extension MainViewController: KeyframeGraphViewDelegate {
         moveGraphKeyframe(layerID: layerID, property: property, fromFrame: fromFrame, toFrame: toFrame, value: value); refreshAll()
     }
 
-    func keyframeGraph(_ graph: KeyframeGraphView, didChangeEasingAt layerID: UUID, property: AnimatedProperty, frame: Int, easing: KeyframeEasing) {
+    func keyframeGraph(_ graph: KeyframeGraphView, didChangeEasingAt layerID: UUID, property: AnimatedProperty, frame: Int, easing: CubicBezier) {
         guard let layer=layers.first(where:{$0.id==layerID}), let idx=layer.propertyKeyframes.firstIndex(where:{$0.frame==frame && $0.property==property}) else { return }
         let before=captureSnapshot(); layer.propertyKeyframes[idx].easing=easing; finishMutation(before:before, actionName:"グラフのイージング変更"); refreshKeyframeInspector()
+    }
+
+    func keyframeGraph(_ graph: KeyframeGraphView, didDeleteKeyframeAt layerID: UUID, property: AnimatedProperty, frame: Int) {
+        guard let layer = layers.first(where: { $0.id == layerID }) else { return }
+        guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) else { return }
+        let before = captureSnapshot()
+        layer.propertyKeyframes.remove(at: idx)
+        normalizeKeyframes(layer)
+        finishMutation(before: before, actionName: "キーフレーム削除")
+        refreshAll()
     }
 
     func keyframeGraph(_ graph: KeyframeGraphView, didAddKeyframeFor property: AnimatedProperty, at frame: Int) {

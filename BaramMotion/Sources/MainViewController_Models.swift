@@ -25,11 +25,54 @@ extension MainViewController {
         }
     }
 
-    enum KeyframeEasing: String, CaseIterable {
-        case linear = "Linear"
-        case easeIn = "Ease In"
-        case easeOut = "Ease Out"
-        case easeInOut = "Ease In Out"
+    struct CubicBezier: Equatable {
+        var cp1: CGPoint
+        var cp2: CGPoint
+
+        static let linear = CubicBezier(cp1: CGPoint(x: 0, y: 0), cp2: CGPoint(x: 1, y: 1))
+        static let easeIn = CubicBezier(cp1: CGPoint(x: 0.42, y: 0), cp2: CGPoint(x: 1, y: 1))
+        static let easeOut = CubicBezier(cp1: CGPoint(x: 0, y: 0), cp2: CGPoint(x: 0.58, y: 1))
+        static let easeInOut = CubicBezier(cp1: CGPoint(x: 0.42, y: 0), cp2: CGPoint(x: 0.58, y: 1))
+
+        static let presets: [(String, CubicBezier)] = [
+            ("Linear", .linear),
+            ("Ease In", .easeIn),
+            ("Ease Out", .easeOut),
+            ("Ease In Out", .easeInOut),
+        ]
+
+        func evaluate(_ t: CGFloat) -> CGFloat {
+            let u = 1 - t
+            let tt = t * t
+            let uu = u * u
+            return 3 * uu * t * cp1.y + 3 * u * tt * cp2.y + t * t * t
+        }
+
+        func xAt(_ t: CGFloat) -> CGFloat {
+            let u = 1 - t
+            let tt = t * t
+            let uu = u * u
+            return 3 * uu * t * cp1.x + 3 * u * tt * cp2.x + t * t * t
+        }
+
+        func xDerivative(_ t: CGFloat) -> CGFloat {
+            let u = 1 - t
+            return 3 * u * u * cp1.x + 6 * u * t * (cp2.x - cp1.x) + 3 * t * t * (1 - cp2.x)
+        }
+
+        func solve(_ value: CGFloat) -> CGFloat {
+            var t = value
+            for _ in 0..<10 {
+                let x = xAt(t)
+                let dx = xDerivative(t)
+                if abs(dx) < 0.0001 { break }
+                let diff = x - value
+                if abs(diff) < 0.0001 { break }
+                t -= diff / dx
+                t = max(0, min(1, t))
+            }
+            return evaluate(t)
+        }
     }
 
     struct TransformValue: Equatable {
@@ -78,21 +121,21 @@ extension MainViewController {
         var text: String
         var boolValue: Bool
         var colorValue: ColorValue?
-        var easing: KeyframeEasing = .easeInOut
+        var easing: CubicBezier = .easeInOut
 
-        static func scalar(_ property: AnimatedProperty, frame: Int, value: CGFloat, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+        static func scalar(_ property: AnimatedProperty, frame: Int, value: CGFloat, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
             PropertyKeyframe(frame: frame, property: property, scalar: value, text: "", boolValue: false, colorValue: nil, easing: easing)
         }
 
-        static func text(_ frame: Int, value: String, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+        static func text(_ frame: Int, value: String, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
             PropertyKeyframe(frame: frame, property: .text, scalar: 0, text: value, boolValue: false, colorValue: nil, easing: easing)
         }
 
-        static func state(_ frame: Int, value: Bool, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+        static func state(_ frame: Int, value: Bool, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
             PropertyKeyframe(frame: frame, property: .isOn, scalar: 0, text: "", boolValue: value, colorValue: nil, easing: easing)
         }
 
-        static func color(_ frame: Int, value: ColorValue, easing: KeyframeEasing = .easeInOut) -> PropertyKeyframe {
+        static func color(_ frame: Int, value: ColorValue, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
             PropertyKeyframe(frame: frame, property: .color, scalar: value.brightness, text: "", boolValue: false, colorValue: value, easing: easing)
         }
     }
