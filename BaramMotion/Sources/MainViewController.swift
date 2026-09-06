@@ -51,14 +51,18 @@ final class MainViewController: NSViewController {
     var scaleXField: NSTextField?
     var scaleYField: NSTextField?
     var rotationField: NSTextField?
+    var opacityField: NSTextField?
+    var borderWidthField: NSTextField?
     var switchWidthField: NSTextField?
     var switchHeightField: NSTextField?
 
     // Playback controls
-    let playbackController = PlaybackController()
-    var playbackHostingView: NSHostingView<PlaybackControlsView>?
     let playbackFrameRate: CGFloat = 30
+    lazy var playbackController: PlaybackController = PlaybackController(frameRate: Double(playbackFrameRate))
+    var playbackHostingView: NSHostingView<PlaybackControlsView>?
     var playbackLastFrameCount: Int = 1
+    var timelinePixelsPerSecond: CGFloat = 90
+    var selectedDurationField: NSTextField?
 
     // Preview position editing
     var previewEditBeforeSnapshot: [UUID: LayerSnapshot] = [:]

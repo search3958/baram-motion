@@ -9,7 +9,8 @@ final class PlaybackController: ObservableObject {
     private var timer: Timer?
     private var playbackStartTime: CFTimeInterval = 0
     private var playbackStartFrame: Int = 0
-    private let frameRate: Double = 30.0
+    let frameRate: Double
+    init(frameRate: Double = 30.0) { self.frameRate = max(1.0, frameRate) }
     deinit { stop() }
     var frameDuration: Double { 1.0 / frameRate }
     func setTotalFrames(_ value:Int){ totalFrames=max(1,value); currentFrame=min(currentFrame,totalFrames) }
@@ -57,7 +58,7 @@ struct PlaybackControlsView: View {
                 Button(action:{controller.step(by:1);onCurrentFrameChanged(controller.currentFrame)}){Image(systemName:"chevron.right.2")}.buttonStyle(.borderless)
             }
             Slider(value:Binding<Double>(get:{Double(controller.currentFrame)},set:{let f=Int($0.rounded());controller.setCurrentFrame(f);onCurrentFrameChanged(f)}),in:0...Double(max(1,controller.totalFrames)),step:1).controlSize(.small)
-            HStack{Text(timeText).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary);Spacer();Text("30 fps · 1F = 0.0333s").font(.system(size:10,design:.monospaced)).foregroundStyle(.tertiary)}
+            HStack{Text(timeText).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary);Spacer();Text("\(Int(controller.frameRate)) fps · 1F = \(String(format: "%.4fs", controller.frameDuration))").font(.system(size:10,design:.monospaced)).foregroundStyle(.tertiary)}
         }.frame(maxWidth:.infinity,alignment:.leading).onChange(of:controller.currentFrame){_,v in onCurrentFrameChanged(v)}
     }
 }

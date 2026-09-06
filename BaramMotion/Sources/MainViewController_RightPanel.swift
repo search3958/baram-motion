@@ -23,6 +23,19 @@ extension MainViewController {
         playbackHostingView = playbackView
         rightContentView.addSubview(playbackView)
 
+        let timelineZoom = makeNumericField(timelinePixelsPerSecond)
+        timelineZoom.target = self
+        timelineZoom.action = #selector(timelineScaleChanged(_:))
+        timelineZoom.minimum = 20
+        timelineZoom.maximum = 600
+        timelineZoom.step = 5
+        timelineZoom.translatesAutoresizingMaskIntoConstraints = false
+        rightContentView.addSubview(timelineZoom)
+
+        let timelineZoomRow = makeInspectorRow(title: "タイムライン幅 / 秒", control: timelineZoom)
+        timelineZoomRow.translatesAutoresizingMaskIntoConstraints = false
+        rightContentView.addSubview(timelineZoomRow)
+
         let separator = NSBox()
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
@@ -47,10 +60,14 @@ extension MainViewController {
             playbackView.trailingAnchor.constraint(equalTo: rightContentView.trailingAnchor, constant: -16),
             playbackView.topAnchor.constraint(equalTo: rightContentView.topAnchor, constant: 12),
             playbackView.heightAnchor.constraint(equalToConstant: 116),
+            timelineZoomRow.leadingAnchor.constraint(equalTo: rightContentView.leadingAnchor, constant: 16),
+            timelineZoomRow.trailingAnchor.constraint(equalTo: rightContentView.trailingAnchor, constant: -16),
+            timelineZoomRow.topAnchor.constraint(equalTo: playbackView.bottomAnchor, constant: 2),
+            timelineZoomRow.heightAnchor.constraint(equalToConstant: 24),
 
             separator.leadingAnchor.constraint(equalTo: rightContentView.leadingAnchor, constant: 16),
             separator.trailingAnchor.constraint(equalTo: rightContentView.trailingAnchor, constant: -16),
-            separator.topAnchor.constraint(equalTo: playbackView.bottomAnchor, constant: 8),
+            separator.topAnchor.constraint(equalTo: timelineZoomRow.bottomAnchor, constant: 8),
 
             scrollView.leadingAnchor.constraint(equalTo: rightContentView.leadingAnchor, constant: 16),
             scrollView.trailingAnchor.constraint(equalTo: rightContentView.trailingAnchor, constant: -16),
@@ -90,6 +107,8 @@ extension MainViewController {
         scaleXField = nil
         scaleYField = nil
         rotationField = nil
+        opacityField = nil
+        borderWidthField = nil
         switchWidthField = nil
         switchHeightField = nil
         cornerRadiusField = nil
@@ -175,17 +194,7 @@ extension MainViewController {
         let anchorControl =
             NSPopUpButton()
 
-        anchorControl.addItems(
-            withTitles: [
-                PositionAnchor
-                    .topLeft
-                    .displayName,
-
-                PositionAnchor
-                    .center
-                    .displayName
-            ]
-        )
+        anchorControl.addItems(withTitles: PositionAnchor.allCases.map(\.displayName))
 
         anchorControl.selectItem(
             at: layer.anchor.rawValue
@@ -222,6 +231,16 @@ extension MainViewController {
         cornerField.target = self; cornerField.action = #selector(cornerRadiusChanged(_:)); cornerRadiusField = cornerField
         stack.addArrangedSubview(makeAnimatedRow(title: "角丸", control: cornerField, property: .cornerRadius, layer: layer))
 
+        let opacityControl = makeNumericField(evaluatedOpacity(for: layer, frame: playbackController.currentFrame) * 100); opacityControl.target=self; opacityControl.action=#selector(opacityChanged(_:)); opacityControl.minimum=0; opacityControl.maximum=100; opacityControl.step=1; opacityField=opacityControl
+        stack.addArrangedSubview(makeAnimatedRow(title:"透明度 %", control:opacityControl, property:.opacity, layer:layer))
+
+        let borderControl = makeNumericField(layer.borderWidth); borderControl.target=self; borderControl.action=#selector(borderWidthChanged(_:)); borderControl.minimum=0; borderControl.step=1; borderWidthField=borderControl
+        stack.addArrangedSubview(makeAnimatedRow(title:"枠線太さ", control:borderControl, property:.borderWidth, layer:layer))
+        let borderColor = NSColorWell(); borderColor.color=layer.borderColor; borderColor.target=self; borderColor.action=#selector(borderColorChanged(_:))
+        stack.addArrangedSubview(makeInspectorRow(title:"枠線カラー", control:borderColor))
+        let borderPos = NSPopUpButton(); borderPos.addItems(withTitles:StrokePosition.allCases.map(\.displayName)); borderPos.selectItem(at:layer.borderPosition.rawValue); borderPos.target=self; borderPos.action=#selector(borderPositionChanged(_:))
+        stack.addArrangedSubview(makeInspectorRow(title:"枠線位置", control:borderPos))
+
         if layer.kind == .text {
             let textField = NSTextField(string: evaluatedText(for: layer, frame: playbackController.currentFrame))
             textField.font = NSFont.systemFont(ofSize: 12)
@@ -229,9 +248,14 @@ extension MainViewController {
             textField.lineBreakMode = .byTruncatingTail
             textField.target = self
             textField.action = #selector(textContentChanged(_:))
-            textField.widthAnchor.constraint(equalToConstant: 120).isActive = true
+            textField.widthAnchor.constraint(equalToConstant: 180).isActive = true
+            textField.heightAnchor.constraint(equalToConstant: 72).isActive = true
+            textField.cell?.wraps = true
+            textField.cell?.isScrollable = false
             textContentField = textField
             stack.addArrangedSubview(makeAnimatedRow(title: "内容", control: textField, property: .text, layer: layer))
+            let h = NSPopUpButton(); h.addItems(withTitles:TextHorizontalAlignment.allCases.map(\.displayName)); h.selectItem(at:layer.textHorizontalAlignment.rawValue); h.target=self; h.action=#selector(textHorizontalAlignmentChanged(_:)); stack.addArrangedSubview(makeInspectorRow(title:"横位置",control:h))
+            let v = NSPopUpButton(); v.addItems(withTitles:TextVerticalAlignment.allCases.map(\.displayName)); v.selectItem(at:layer.textVerticalAlignment.rawValue); v.target=self; v.action=#selector(textVerticalAlignmentChanged(_:)); stack.addArrangedSubview(makeInspectorRow(title:"縦位置",control:v))
         }
 
         if layer.kind == .toggle {
@@ -259,8 +283,13 @@ extension MainViewController {
             stack.addArrangedSubview(makeInspectorRow(title: "文字サイズ", control: fontControl))
 
             let popup = NSPopUpButton()
-            popup.addItems(withTitles: NSFontManager.shared.availableFontFamilies.sorted())
-            popup.selectItem(withTitle: evaluatedFontName(for: layer, frame: playbackController.currentFrame))
+            for family in NSFontManager.shared.availableFontFamilies.sorted() {
+                let item = NSMenuItem(title: family, action: nil, keyEquivalent: "")
+                item.representedObject = family
+                popup.menu?.addItem(item)
+            }
+            let evaluatedFont = evaluatedFontName(for: layer, frame: playbackController.currentFrame)
+            popup.selectItem(withTitle: evaluatedFont)
             popup.target = self
             popup.action = #selector(fontChanged(_:))
             popup.widthAnchor.constraint(equalToConstant: 170).isActive = true
@@ -299,6 +328,50 @@ extension MainViewController {
             deleteButton
         )
     }
+
+    @objc func borderWidthChanged(_ sender:NSTextField){ guard let layer=selectedLayer else{return}; guard let n=Double(sender.stringValue),n.isFinite else{refreshInspectorValues();return}; let v=max(0,CGFloat(n)); let f=playbackController.currentFrame;let b=captureSnapshot(); if let i=layer.propertyKeyframes.firstIndex(where: { $0.property == .borderWidth && $0.frame == f }){layer.propertyKeyframes[i].scalar=v}else if layer.propertyKeyframes.contains(where: { $0.property == .borderWidth }){layer.propertyKeyframes.append(.scalar(.borderWidth,frame:f,value:v));normalizeKeyframes(layer)}else{layer.borderWidth=v};finishMutation(before:b,actionName:"枠線太さ変更");refreshAll();NSLog("[Baram Motion] Border width changed %.2f",Double(v)) }
+    @objc func borderColorChanged(_ sender:NSColorWell){ guard let layer=selectedLayer else{return};let b=captureSnapshot();layer.borderColor=sender.color;finishMutation(before:b,actionName:"枠線カラー変更");refreshAll();NSLog("[Baram Motion] Border color changed.") }
+    @objc func borderPositionChanged(_ sender:NSPopUpButton){ guard let layer=selectedLayer,let p=StrokePosition(rawValue:sender.indexOfSelectedItem) else{return};let b=captureSnapshot();layer.borderPosition=p;finishMutation(before:b,actionName:"枠線位置変更");refreshAll();NSLog("[Baram Motion] Border position changed: %@",p.displayName) }
+    @objc func textHorizontalAlignmentChanged(_ sender:NSPopUpButton){guard let layer=selectedLayer,let a=TextHorizontalAlignment(rawValue:sender.indexOfSelectedItem) else{return};let b=captureSnapshot();layer.textHorizontalAlignment=a;finishMutation(before:b,actionName:"テキスト横位置変更");refreshAll();NSLog("[Baram Motion] Text horizontal alignment changed: %@",a.displayName)}
+    @objc func textVerticalAlignmentChanged(_ sender:NSPopUpButton){guard let layer=selectedLayer,let a=TextVerticalAlignment(rawValue:sender.indexOfSelectedItem) else{return};let b=captureSnapshot();layer.textVerticalAlignment=a;finishMutation(before:b,actionName:"テキスト縦位置変更");refreshAll();NSLog("[Baram Motion] Text vertical alignment changed: %@",a.displayName)}
+
+    @objc
+    func fontChanged(_ sender: NSPopUpButton) {
+        guard let layer = selectedLayer, layer.kind == .text else {
+            NSLog("[Baram Motion] ERROR: Font change requires a text layer.")
+            return
+        }
+
+        guard let item = sender.selectedItem,
+              let fontName = item.representedObject as? String,
+              !fontName.isEmpty else {
+            NSLog("[Baram Motion] ERROR: Invalid font selection.")
+            return
+        }
+
+        let before = captureSnapshot()
+        let frame = playbackController.currentFrame
+
+        if let index = layer.propertyKeyframes.firstIndex(where: {
+            $0.property == .font && $0.frame == frame
+        }) {
+            layer.propertyKeyframes[index].fontName = fontName
+        } else if layer.propertyKeyframes.contains(where: { $0.property == .font }) {
+            layer.propertyKeyframes.append(.font(frame, value: fontName))
+            normalizeKeyframes(layer)
+        } else if frame == 0 {
+            layer.fontName = fontName
+        } else {
+            layer.propertyKeyframes.append(.font(frame, value: fontName))
+            normalizeKeyframes(layer)
+        }
+
+        finishMutation(before: before, actionName: "フォント変更")
+        refreshAll()
+        NSLog("[Baram Motion] Font changed: %@ frame=%d", fontName, frame)
+    }
+
+    @objc func timelineScaleChanged(_ sender:NSTextField){ guard let n=Double(sender.stringValue),n.isFinite else{return}; timelinePixelsPerSecond=max(20,min(600,CGFloat(n))); timelineContent.timelineScale=timelinePixelsPerSecond; updateTimelineSize(); timelineContent.needsDisplay=true; NSLog("[Baram Motion] Timeline scale changed: %.1f px/s",Double(timelinePixelsPerSecond)) }
 
     @objc func cornerRadiusChanged(_ sender: NSTextField) {
         guard let layer = selectedLayer, layer.kind == .rectangle else { NSLog("[Baram Motion] ERROR: Corner radius requires rectangle layer."); return }
@@ -385,15 +458,8 @@ extension MainViewController {
         return row
     }
 
-    func makeNumericField(
-        _ value: CGFloat
-    ) -> NSTextField {
-
-        let field =
-            NSTextField(
-                string:
-                    formatNumber(value)
-            )
+    func makeNumericField(_ value: CGFloat) -> BaramMotionNumericField {
+        let field = BaramMotionNumericField(string: formatNumber(value))
 
         field.font =
             NSFont.monospacedSystemFont(

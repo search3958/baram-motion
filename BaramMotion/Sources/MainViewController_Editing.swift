@@ -1,3 +1,21 @@
+
+final class BaramMotionNumericField: NSTextField {
+    var step: CGFloat = 1
+    var minimum: CGFloat?
+    var maximum: CGFloat?
+    override func scrollWheel(with event: NSEvent) {
+        guard !stringValue.isEmpty else { super.scrollWheel(with:event); return }
+        guard let current=Double(stringValue), current.isFinite else { super.scrollWheel(with:event); return }
+        let direction = event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY
+        guard abs(direction) > 0 else { return }
+        var next=CGFloat(current)+(direction > 0 ? step : -step)
+        if let minimum { next=max(minimum,next) }; if let maximum { next=min(maximum,next) }
+        stringValue=String(format:"%.3f",Double(next)).replacingOccurrences(of:#"\.?0+$"#,with:"",options:.regularExpression)
+        sendAction(action,to:target)
+        NSLog("[Baram Motion] Numeric wheel changed: %@", stringValue)
+    }
+}
+
 import AppKit
 import SwiftUI
 import Combine
@@ -309,12 +327,10 @@ extension MainViewController {
             return
         }
 
-        let newAnchor:
-            PositionAnchor =
-            sender.indexOfSelectedItem
-                == PositionAnchor.center.rawValue
-                ? .center
-                : .topLeft
+        guard let newAnchor = PositionAnchor(rawValue: sender.indexOfSelectedItem) else {
+            NSLog("[Baram Motion] ERROR: Invalid anchor index: %ld", sender.indexOfSelectedItem)
+            return
+        }
 
         guard layer.anchor != newAnchor else {
             return
@@ -323,25 +339,12 @@ extension MainViewController {
         let before =
             captureSnapshot()
 
-        let currentFrame =
-            frameForLayer(layer)
+        let currentFrame = frameForLayer(layer)
+        layer.anchor = newAnchor
+        let newPosition = positionForFrame(currentFrame, anchor: newAnchor)
 
-        layer.anchor =
-            newAnchor
-
-        let newPosition =
-            positionForFrame(
-                currentFrame,
-                anchor: newAnchor
-            )
-
-        layer.x =
-            newPosition.x
-
-        layer.y =
-            newPosition.y
-
-        clampLayerPosition(layer)
+        layer.x = newPosition.x
+        layer.y = newPosition.y
 
         finishMutation(
             before: before,
@@ -367,7 +370,6 @@ extension MainViewController {
             layer.propertyKeyframes.append(.scalar(property, frame: frame, value: CGFloat(number)))
         } else {
             if property == .x { layer.x = CGFloat(number) } else { layer.y = CGFloat(number) }
-            clampLayerPosition(layer)
         }
         finishMutation(before: before, actionName: "\(property.rawValue) 変更")
         NSLog("[Baram Motion] Position property changed %@ frame=%d", property.rawValue, frame)
@@ -394,6 +396,25 @@ extension MainViewController {
         }
         finishMutation(before: before, actionName: "\(property.rawValue) 変更")
         NSLog("[Baram Motion] Size property changed %@ frame=%d value=%.1f", property.rawValue, frame, value)
+    }
+
+    @objc func transformFieldChanged(_ sender: NSTextField) {
+        guard let layer=selectedLayer else { NSLog("[Baram Motion] ERROR: No selected layer for transform input."); return }
+        let property: AnimatedProperty
+        if sender === scaleXField { property = .scaleX } else if sender === scaleYField { property = .scaleY } else if sender === rotationField { property = .rotation } else { NSLog("[Baram Motion] ERROR: Unknown transform field."); return }
+        guard let value=Double(sender.stringValue), value.isFinite else { refreshInspectorValues(); return }
+        let clamped = property == .scaleX || property == .scaleY ? max(0.001, CGFloat(value)) : CGFloat(value)
+        let frame=playbackController.currentFrame; let before=captureSnapshot()
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) { layer.propertyKeyframes[idx].scalar=clamped }
+        else if layer.propertyKeyframes.contains(where: { $0.property == property }) { layer.propertyKeyframes.append(.scalar(property,frame:frame,value:clamped)); normalizeKeyframes(layer) }
+        else { switch property { case .scaleX: if frame == 0 { /* base values are represented by a key when editing animated state */ }; layer.propertyKeyframes.append(.scalar(.scaleX,frame:frame,value:clamped)); case .scaleY: layer.propertyKeyframes.append(.scalar(.scaleY,frame:frame,value:clamped)); case .rotation: layer.propertyKeyframes.append(.scalar(.rotation,frame:frame,value:clamped)); default: break }; normalizeKeyframes(layer) }
+        finishMutation(before:before,actionName:"\(property.rawValue)変更"); refreshAll(); NSLog("[Baram Motion] Transform changed %@=%.3f frame=%d",property.rawValue,clamped,frame)
+    }
+
+    @objc func opacityChanged(_ sender:NSTextField) {
+        guard let layer=selectedLayer else{return}; guard let n=Double(sender.stringValue),n.isFinite else{refreshInspectorValues();return}; let v=max(0,min(1,CGFloat(n)/100)); let f=playbackController.currentFrame; let before=captureSnapshot()
+        if let i=layer.propertyKeyframes.firstIndex(where: { $0.property == .opacity && $0.frame == f }){layer.propertyKeyframes[i].scalar=v}else{layer.propertyKeyframes.append(.scalar(.opacity,frame:f,value:v));normalizeKeyframes(layer)}
+        finishMutation(before:before,actionName:"透明度変更");refreshAll();NSLog("[Baram Motion] Opacity changed %.1f%%",Double(v*100))
     }
 
     @objc
@@ -460,42 +481,6 @@ extension MainViewController {
         layer.propertyKeyframes.sort { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
         finishMutation(before: before, actionName: "テキスト変更")
         NSLog("[Baram Motion] Text changed at frame %d: %@", frame, sender.stringValue)
-    }
-
-    @objc func transformFieldChanged(_ sender: NSTextField) {
-        guard let layer = selectedLayer else { return }
-        guard let number = Double(sender.stringValue), number.isFinite else { return }
-        let property: AnimatedProperty = sender === scaleXField ? .scaleX : sender === scaleYField ? .scaleY : .rotation
-        let before = captureSnapshot()
-        let frame = playbackController.currentFrame
-        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) {
-            layer.propertyKeyframes[idx].scalar = CGFloat(number)
-        } else if layer.propertyKeyframes.contains(where: { $0.property == property }) {
-            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: CGFloat(number)))
-        }
-        normalizeKeyframes(layer)
-        finishMutation(before: before, actionName: "\(property.rawValue) 変更")
-    }
-
-    @objc func fontChanged(_ sender: NSPopUpButton) {
-        guard let layer = selectedLayer, layer.kind == .text else { return }
-        let before = captureSnapshot()
-        let frame = playbackController.currentFrame
-        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .font && $0.frame == frame }) {
-            layer.propertyKeyframes[idx].fontName = sender.titleOfSelectedItem ?? ""
-        } else if layer.propertyKeyframes.contains(where: { $0.property == .font }) {
-            if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .font }) {
-                layer.propertyKeyframes[idx].fontName = sender.titleOfSelectedItem ?? ""
-            }
-        } else if layer.propertyKeyframes.contains(where: { $0.property == .text && $0.frame == frame }) {
-            if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .text && $0.frame == frame }) {
-                layer.propertyKeyframes[idx].fontName = sender.titleOfSelectedItem ?? ""
-            }
-        } else {
-            layer.propertyKeyframes.append(.font(frame, value: sender.titleOfSelectedItem ?? ""))
-            normalizeKeyframes(layer)
-        }
-        finishMutation(before: before, actionName: "フォント変更")
     }
 
     func setSwitchState(for id: UUID, isOn: Bool) {
@@ -603,6 +588,9 @@ extension MainViewController {
             displayLayer.cornerRadius = evaluatedCornerRadius(for: layer, frame: frame)
             element.frame = frameForLayer(displayLayer)
             element.cornerRadius = min(displayLayer.cornerRadius, min(displayLayer.width, displayLayer.height) * 0.5)
+            element.scaleX = transform.scaleX
+            element.scaleY = transform.scaleY
+            element.rotation = transform.rotation
         }
         refreshInspectorValues()
         refreshKeyframeInspector()
@@ -794,7 +782,6 @@ extension MainViewController {
                 left.duration != right.duration ||
                 left.isOn != right.isOn ||
                 left.isVisible != right.isVisible ||
-                left.opacity != right.opacity ||
                 left.propertyKeyframes != right.propertyKeyframes {
 
                 return true

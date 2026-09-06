@@ -15,9 +15,10 @@ final class TimelineContentView: NSView {
     private var selectedLayerID:UUID?
     private let rulerHeight:CGFloat = 28
     private let rowHeight:CGFloat = 34
-    private let timelineScale:CGFloat = 90
+    var timelineScale:CGFloat = 90 { didSet { timelineScale = max(20, min(600, timelineScale)); needsDisplay=true; resetCursorRects() } }
+    var frameRate: CGFloat = 30 { didSet { frameRate = max(1, frameRate); needsDisplay=true; resetCursorRects() } }
     private let edgeHitWidth:CGFloat = 8
-    private let minimumDuration:CGFloat = 1.0/30.0
+    private var minimumDuration: CGFloat { 1.0 / max(1, frameRate) }
     private var scrubbingPlayhead = false
     private enum Interaction { case none, move, resizeLeft, resizeRight }
     private var interaction:Interaction  =  .none
@@ -65,32 +66,11 @@ final class TimelineContentView: NSView {
             rowColor.setFill()
             NSRect(x:0,y:y,width:bounds.width,height:rowHeight).fill()
             let rect = NSRect(x:layer.startTime*timelineScale,y:y+5,width:max(20,layer.duration*timelineScale),height:rowHeight-10)
-            ctx.saveGState()
-            let centerX = rect.midX
-            let centerY = rect.midY
-            ctx.translateBy(x: centerX, y: centerY)
-            ctx.scaleBy(x: 1.8, y: 1.2)
-            ctx.translateBy(x: -centerX, y: -centerY)
-            layer.color.withAlphaComponent(layer.opacity * (layer.id==selectedLayerID ? 0.88:0.66)).setFill()
+            layer.color.withAlphaComponent(layer.id==selectedLayerID ? 0.88:0.66).setFill()
             let path = NSBezierPath(roundedRect:rect,xRadius:6,yRadius:6); path.fill()
             if layer.id==selectedLayerID { NSColor.controlAccentColor.setStroke(); path.lineWidth = 2; path.stroke() }
-            ctx.restoreGState()
-            let kindSymbol: String
-            switch layer.kindDisplayName {
-            case "Text": kindSymbol = "textformat"
-            case "Rectangle": kindSymbol = "rectangle"
-            default: kindSymbol = "switch.2"
-            }
-            if let image = NSImage(systemSymbolName: kindSymbol, accessibilityDescription: layer.kindDisplayName) {
-                image.isTemplate = true
-                let iconRect = NSRect(x: rect.minX + 8, y: y + 8, width: 16, height: 16)
-                let size = image.size
-                let scale = min(iconRect.width / size.width, iconRect.height / size.height)
-                let drawSize = CGSize(width: size.width * scale, height: size.height * scale)
-                let drawRect = NSRect(x: iconRect.midX - drawSize.width / 2, y: iconRect.midY - drawSize.height / 2, width: drawSize.width, height: drawSize.height)
-                image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
-            }
-            for frame in layer.keyframeFrames { drawDiamond(atX:CGFloat(frame)/30*timelineScale, centerY:y+rowHeight/2, selected:frame==currentFrame, context:ctx) }
+            NSString(string:layer.name).draw(in:rect.insetBy(dx:10,dy:6),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:layer.id==selectedLayerID ? .semibold:.medium),.foregroundColor:NSColor.white])
+            for frame in layer.keyframeFrames { drawDiamond(atX:CGFloat(frame)/frameRate*timelineScale, centerY:y+rowHeight/2, selected:frame==currentFrame, context:ctx) }
         }
     }
 
@@ -101,7 +81,7 @@ final class TimelineContentView: NSView {
     }
 
     private func drawPlayhead(_ ctx:CGContext) {
-        let x = CGFloat(currentFrame)/30*timelineScale
+        let x = CGFloat(currentFrame)/max(1, frameRate)*timelineScale
         guard x>=0 && x<=bounds.width else{return}
         NSColor.controlAccentColor.setStroke(); ctx.setLineWidth(2); ctx.move(to:CGPoint(x:x,y:0)); ctx.addLine(to:CGPoint(x:x,y:bounds.height)); ctx.strokePath()
         let knob = NSBezierPath(); knob.move(to:NSPoint(x:x-7,y:0)); knob.line(to:NSPoint(x:x+7,y:0)); knob.line(to:NSPoint(x:x,y:10)); knob.close(); NSColor.controlAccentColor.setFill(); knob.fill()
@@ -124,7 +104,7 @@ final class TimelineContentView: NSView {
         let p = convert(event.locationInWindow,from:nil)
         if p.y > contentHeight-rulerHeight {
             scrubbingPlayhead = true
-            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*30).rounded())))
+            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*frameRate).rounded())))
             return
         }
         guard let hit = hitTest(at:p) else {
@@ -137,7 +117,7 @@ final class TimelineContentView: NSView {
         else if hit.rect.width >= 20 && localX >= hit.rect.width-edgeHitWidth { interaction = .resizeRight }
         else { interaction = .move }
         if event.clickCount >= 2 {
-            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*30).rounded())))
+            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*frameRate).rounded())))
             interaction = .none
             return
         }
@@ -148,11 +128,11 @@ final class TimelineContentView: NSView {
     override func mouseDragged(with event:NSEvent) {
         let p = convert(event.locationInWindow,from:nil)
         if scrubbingPlayhead {
-            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*30).rounded())))
+            delegate?.timelineContentView(self,didRequestFrame:max(0,Int((p.x/timelineScale*frameRate).rounded())))
             return
         }
         guard interaction != .none, let activeLayerID, let active = layers.first(where:{$0.id==activeLayerID}) else{return}
-        let deltaTime = (p.x-dragStartMouseX)/timelineScale
+        let deltaTime = round(((p.x-dragStartMouseX)/timelineScale)*frameRate)/frameRate
         var start = originalStartTime, duration = originalDuration
         switch interaction {
         case .move: start = max(0,originalStartTime+deltaTime)

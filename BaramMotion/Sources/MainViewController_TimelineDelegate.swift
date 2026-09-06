@@ -14,7 +14,7 @@ extension MainViewController: TimelineContentViewDelegate {
 
     func timelineContentView(_ view: TimelineContentView, didChangeLayer id: UUID, startTime: CGFloat, duration: CGFloat) {
         guard let layer=layers.first(where:{$0.id==id}) else { NSLog("[Baram Motion] ERROR: Timeline layer not found."); return }
-        layer.startTime=max(0,startTime); layer.duration=max(1.0/30.0,duration)
+        layer.startTime=max(0,startTime); layer.duration=max(1.0/max(1, playbackFrameRate), duration)
         updateTimelineSize(); refreshPreview()
         timelineContent.reload(layers:timelineProxies,selectedLayerID:selectedLayerID)
         timelineLayerPanel?.reload(layers:timelineProxies,selectedLayerID:selectedLayerID)

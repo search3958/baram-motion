@@ -57,7 +57,9 @@ final class KeyframeGraphView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.controlBackgroundColor.setFill(); dirtyRect.fill()
+        let glass = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18, yRadius: 18)
+        NSColor.windowBackgroundColor.withAlphaComponent(0.72).setFill(); glass.fill()
+        NSColor.separatorColor.withAlphaComponent(0.45).setStroke(); glass.lineWidth = 1; glass.stroke()
         guard let id = selectedLayerID, let layer = layers.first(where: { $0.id == id }) else {
             drawAxes();
             NSString(string: "レイヤーを選択してください").draw(at: NSPoint(x: 16, y: 42), withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor])
@@ -238,6 +240,9 @@ final class KeyframeGraphView: NSView {
         case .scaleX: return .systemIndigo
         case .scaleY: return .systemBrown
         case .rotation: return .systemGray
+        case .opacity: return .systemPink
+        case .borderWidth: return .systemBrown
+        case .borderColor: return .systemGray
         case .cornerRadius: return .systemPurple
         case .color: return .systemTeal
         case .text: return .systemPink
@@ -248,9 +253,9 @@ final class KeyframeGraphView: NSView {
 
     private func graphValue(for key: MainViewController.PropertyKeyframe, property: MainViewController.AnimatedProperty) -> CGFloat {
         switch property {
-        case .x,.y,.width,.height,.scaleX,.scaleY,.rotation,.cornerRadius: return key.scalar
+        case .x,.y,.width,.height,.scaleX,.scaleY,.rotation,.opacity,.borderWidth,.cornerRadius: return key.scalar
         case .isOn: return key.boolValue ? 1 : 0
-        case .text, .font: return 0
+        case .text, .font, .borderColor: return 0
         case .color: return key.scalar
         }
     }
@@ -360,7 +365,7 @@ final class KeyframeGraphView: NSView {
         var value: CGFloat? = nil
 
         switch drag.point.property {
-        case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .cornerRadius, .color:
+        case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .opacity, .cornerRadius, .borderWidth, .color:
             // Graph Y axis is inverted: moving the mouse downward decreases the value.
             value = drag.startValue - deltaY / max(0.1, valueScale)
             if drag.point.property == .width || drag.point.property == .height { value = max(1, value ?? 1) }
@@ -368,7 +373,9 @@ final class KeyframeGraphView: NSView {
             if drag.point.property == .color { value = max(0, min(1, value ?? 0)) }
         case .isOn:
             value = (drag.startValue - deltaY / max(0.1, valueScale)) >= 0.5 ? 1 : 0
-        case .text, .font:
+        case .borderColor, .text, .font:
+            // Color/text/font values are not represented as a scalar drag value.
+            // The keyframe can still be moved horizontally by frame.
             value = nil
         }
 
@@ -418,6 +425,7 @@ final class KeyframeGraphView: NSView {
         if hitHandle(at: p) != nil { NSCursor.crosshair.set() }
         window?.invalidateCursorRects(for: self)
     }
+
 
     override func rightMouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)

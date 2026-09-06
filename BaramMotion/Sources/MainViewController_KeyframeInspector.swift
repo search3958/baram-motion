@@ -41,12 +41,26 @@ extension MainViewController {
     func toggleKeyframe(property: AnimatedProperty, layer: LayerModel, frame: Int) {
         if let idx = layer.propertyKeyframes.firstIndex(where: { $0.frame == frame && $0.property == property }) { layer.propertyKeyframes.remove(at: idx); return }
         switch property {
-        case .x, .y, .width, .height, .scaleX, .scaleY, .rotation:
+        case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .opacity, .borderWidth:
             let t = evaluatedTransform(for: layer, frame: frame)
-            let value: CGFloat = property == .x ? t.x : property == .y ? t.y : property == .width ? t.width : property == .height ? t.height : property == .scaleX ? t.scaleX : property == .scaleY ? t.scaleY : t.rotation
+            let value: CGFloat
+            switch property {
+            case .x: value = t.x
+            case .y: value = t.y
+            case .width: value = t.width
+            case .height: value = t.height
+            case .scaleX: value = t.scaleX
+            case .scaleY: value = t.scaleY
+            case .rotation: value = t.rotation
+            case .opacity: value = evaluatedOpacity(for: layer, frame: frame)
+            case .borderWidth: value = layer.borderWidth
+            default: value = 0
+            }
             layer.propertyKeyframes.append(.scalar(property, frame: frame, value: value))
         case .cornerRadius:
             layer.propertyKeyframes.append(.scalar(.cornerRadius, frame: frame, value: evaluatedCornerRadius(for: layer, frame: frame)))
+        case .borderColor:
+            layer.propertyKeyframes.append(PropertyKeyframe(frame: frame, property: .borderColor, scalar: 0, text: "", fontName: "", boolValue: false, colorValue: ColorValue.from(layer.borderColor), easing: .easeInOut))
         case .color:
             layer.propertyKeyframes.append(.color(frame, value: ColorValue.from(evaluatedColor(for: layer, frame: frame))))
         case .text:
@@ -74,7 +88,10 @@ extension MainViewController {
             case .width,.height: layer.propertyKeyframes[idx].scalar = max(1, value)
             case .scaleX,.scaleY: layer.propertyKeyframes[idx].scalar = max(0.001, value)
             case .rotation: layer.propertyKeyframes[idx].scalar = value
+            case .opacity: layer.propertyKeyframes[idx].scalar = max(0, min(1, value))
+            case .borderWidth: layer.propertyKeyframes[idx].scalar = max(0, value)
             case .cornerRadius: layer.propertyKeyframes[idx].scalar = max(0, value)
+            case .borderColor: break
             case .color:
                 let old = layer.propertyKeyframes[idx].colorValue ?? ColorValue.from(layer.color)
                 let brightness = max(0, min(1, value))

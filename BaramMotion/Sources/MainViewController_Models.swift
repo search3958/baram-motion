@@ -14,15 +14,45 @@ extension MainViewController {
         }
     }
 
-    enum PositionAnchor: Int {
-        case topLeft = 0
-        case center = 1
+    enum PositionAnchor: Int, CaseIterable {
+        case topLeft = 0, top = 1, topRight = 2
+        case left = 3, center = 4, right = 5
+        case bottomLeft = 6, bottom = 7, bottomRight = 8
         var displayName: String {
             switch self {
-            case .topLeft: return "左上から"
-            case .center: return "中央から"
+            case .topLeft: return "左上"
+            case .top: return "上"
+            case .topRight: return "右上"
+            case .left: return "左"
+            case .center: return "中央"
+            case .right: return "右"
+            case .bottomLeft: return "左下"
+            case .bottom: return "下"
+            case .bottomRight: return "右下"
             }
         }
+    }
+
+    enum StrokePosition: Int, CaseIterable {
+        case inside = 0, centered = 1, outside = 2
+        var displayName: String {
+            switch self {
+            case .inside: return "内側"
+            case .centered: return "間"
+            case .outside: return "外側"
+            }
+        }
+    }
+
+    enum TextHorizontalAlignment: Int, CaseIterable {
+        case left = 0, center = 1, right = 2
+        var nsAlignment: NSTextAlignment { switch self { case .left: return .left; case .center: return .center; case .right: return .right } }
+        var displayName: String { switch self { case .left: return "左"; case .center: return "中央"; case .right: return "右" } }
+    }
+
+    enum TextVerticalAlignment: Int, CaseIterable {
+        case top = 0, center = 1, bottom = 2
+        var displayName: String { switch self { case .top: return "上"; case .center: return "中央"; case .bottom: return "下" } }
     }
 
     struct CubicBezier: Equatable {
@@ -107,7 +137,10 @@ extension MainViewController {
         case scaleX = "Xスケール"
         case scaleY = "Yスケール"
         case rotation = "角度"
+        case opacity = "透明度"
         case cornerRadius = "角丸"
+        case borderWidth = "枠線太さ"
+        case borderColor = "枠線カラー"
         case color = "カラー"
         case text = "テキスト"
         case font = "フォント"
@@ -115,8 +148,8 @@ extension MainViewController {
 
         var isNumeric: Bool {
             switch self {
-            case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .cornerRadius, .color: return true
-            case .text, .font, .isOn: return false
+            case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .opacity, .cornerRadius, .borderWidth, .color: return true
+            case .borderColor, .text, .font, .isOn: return false
             }
         }
     }
@@ -181,6 +214,12 @@ extension MainViewController {
         var kind: LayerKind
         var name: String
         var color: NSColor
+        var opacity: CGFloat
+        var borderWidth: CGFloat
+        var borderColor: NSColor
+        var borderPosition: StrokePosition
+        var textHorizontalAlignment: TextHorizontalAlignment
+        var textVerticalAlignment: TextVerticalAlignment
         var text: String
         var x: CGFloat
         var y: CGFloat
@@ -194,22 +233,25 @@ extension MainViewController {
         var duration: CGFloat
         var isOn: Bool
         var isVisible: Bool
-        var opacity: CGFloat
         var propertyKeyframes: [PropertyKeyframe]
 
         init(
             id: UUID = UUID(), kind: LayerKind, name: String, color: NSColor, text: String? = nil,
+            opacity: CGFloat = 1, borderWidth: CGFloat = 0, borderColor: NSColor = .labelColor, borderPosition: StrokePosition = .centered,
+            textHorizontalAlignment: TextHorizontalAlignment = .center, textVerticalAlignment: TextVerticalAlignment = .center,
             x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
             cornerRadius: CGFloat = 8,
             fontSize: CGFloat = 56, fontName: String = NSFont.systemFont(ofSize: 56, weight: .medium).familyName ?? NSFont.systemFont(ofSize: 56).fontName, anchor: PositionAnchor = .topLeft,
             startTime: CGFloat = 0, duration: CGFloat = 5, isOn: Bool = true,
-            isVisible: Bool = true, opacity: CGFloat = 1.0, propertyKeyframes: [PropertyKeyframe] = []
+            isVisible: Bool = true, propertyKeyframes: [PropertyKeyframe] = []
         ) {
             self.id=id; self.kind=kind; self.name=name; self.color=color
+            self.opacity=max(0,min(1,opacity)); self.borderWidth=max(0,borderWidth); self.borderColor=borderColor; self.borderPosition=borderPosition
+            self.textHorizontalAlignment=textHorizontalAlignment; self.textVerticalAlignment=textVerticalAlignment
             self.text=text ?? (kind == .text ? name : "")
             self.x=x; self.y=y; self.width=width; self.height=height; self.cornerRadius=max(0,cornerRadius)
             self.fontSize=fontSize; self.fontName=fontName; self.anchor=anchor; self.startTime=startTime
-            self.duration=duration; self.isOn=isOn; self.isVisible=isVisible; self.opacity=opacity
+            self.duration=duration; self.isOn=isOn; self.isVisible=isVisible
             self.propertyKeyframes = propertyKeyframes.sorted { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
         }
 
@@ -218,10 +260,10 @@ extension MainViewController {
         }
 
         func copyLayer() -> LayerModel {
-            LayerModel(id:id, kind:kind, name:name, color:color, text:text, x:x, y:y,
-                       width:width, height:height, cornerRadius:cornerRadius, fontSize:fontSize, fontName:fontName, anchor:anchor,
+            LayerModel(id:id, kind:kind, name:name, color:color, text:text, opacity:opacity, borderWidth:borderWidth, borderColor:borderColor, borderPosition:borderPosition,
+                       textHorizontalAlignment:textHorizontalAlignment, textVerticalAlignment:textVerticalAlignment, x:x, y:y, width:width, height:height, cornerRadius:cornerRadius, fontSize:fontSize, fontName:fontName, anchor:anchor,
                        startTime:startTime, duration:duration, isOn:isOn,
-                       isVisible:isVisible, opacity:opacity, propertyKeyframes:propertyKeyframes)
+                       isVisible:isVisible, propertyKeyframes:propertyKeyframes)
         }
     }
 
@@ -238,7 +280,6 @@ extension MainViewController {
         let startTime: CGFloat
         let duration: CGFloat
         let isVisible: Bool
-        let opacity: CGFloat
         let keyframeFrames: [Int]
     }
 

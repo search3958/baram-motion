@@ -187,6 +187,7 @@ extension MainViewController {
 
         timelineContent = TimelineContentView()
         timelineContent.delegate = self
+        timelineContent.frameRate = playbackFrameRate
         scrollView.documentView = timelineContent
         timelineScrollView = scrollView
         scrollView.contentView.postsBoundsChangedNotifications = true
