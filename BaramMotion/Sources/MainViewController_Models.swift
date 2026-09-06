@@ -80,6 +80,9 @@ extension MainViewController {
         var y: CGFloat
         var width: CGFloat
         var height: CGFloat
+        var scaleX: CGFloat
+        var scaleY: CGFloat
+        var rotation: CGFloat
     }
 
     struct ColorValue: Equatable {
@@ -101,15 +104,19 @@ extension MainViewController {
         case y = "Y"
         case width = "幅"
         case height = "高さ"
+        case scaleX = "Xスケール"
+        case scaleY = "Yスケール"
+        case rotation = "角度"
         case cornerRadius = "角丸"
         case color = "カラー"
         case text = "テキスト"
+        case font = "フォント"
         case isOn = "Switch状態"
 
         var isNumeric: Bool {
             switch self {
-            case .x, .y, .width, .height, .cornerRadius, .color: return true
-            case .text, .isOn: return false
+            case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .cornerRadius, .color: return true
+            case .text, .font, .isOn: return false
             }
         }
     }
@@ -119,24 +126,29 @@ extension MainViewController {
         var property: AnimatedProperty
         var scalar: CGFloat
         var text: String
+        var fontName: String
         var boolValue: Bool
         var colorValue: ColorValue?
         var easing: CubicBezier = .easeInOut
 
         static func scalar(_ property: AnimatedProperty, frame: Int, value: CGFloat, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
-            PropertyKeyframe(frame: frame, property: property, scalar: value, text: "", boolValue: false, colorValue: nil, easing: easing)
+            PropertyKeyframe(frame: frame, property: property, scalar: value, text: "", fontName: "", boolValue: false, colorValue: nil, easing: easing)
         }
 
         static func text(_ frame: Int, value: String, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
-            PropertyKeyframe(frame: frame, property: .text, scalar: 0, text: value, boolValue: false, colorValue: nil, easing: easing)
+            PropertyKeyframe(frame: frame, property: .text, scalar: 0, text: value, fontName: "", boolValue: false, colorValue: nil, easing: easing)
         }
 
         static func state(_ frame: Int, value: Bool, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
-            PropertyKeyframe(frame: frame, property: .isOn, scalar: 0, text: "", boolValue: value, colorValue: nil, easing: easing)
+            PropertyKeyframe(frame: frame, property: .isOn, scalar: 0, text: "", fontName: "", boolValue: value, colorValue: nil, easing: easing)
         }
 
         static func color(_ frame: Int, value: ColorValue, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
-            PropertyKeyframe(frame: frame, property: .color, scalar: value.brightness, text: "", boolValue: false, colorValue: value, easing: easing)
+            PropertyKeyframe(frame: frame, property: .color, scalar: value.brightness, text: "", fontName: "", boolValue: false, colorValue: value, easing: easing)
+        }
+
+        static func font(_ frame: Int, value: String, easing: CubicBezier = .easeInOut) -> PropertyKeyframe {
+            PropertyKeyframe(frame: frame, property: .font, scalar: 0, text: "", fontName: value, boolValue: false, colorValue: nil, easing: easing)
         }
     }
 
@@ -176,38 +188,40 @@ extension MainViewController {
         var height: CGFloat
         var cornerRadius: CGFloat
         var fontSize: CGFloat
+        var fontName: String
         var anchor: PositionAnchor
         var startTime: CGFloat
         var duration: CGFloat
         var isOn: Bool
         var isVisible: Bool
+        var opacity: CGFloat
         var propertyKeyframes: [PropertyKeyframe]
 
         init(
             id: UUID = UUID(), kind: LayerKind, name: String, color: NSColor, text: String? = nil,
             x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
             cornerRadius: CGFloat = 8,
-            fontSize: CGFloat = 56, anchor: PositionAnchor = .topLeft,
+            fontSize: CGFloat = 56, fontName: String = NSFont.systemFont(ofSize: 56, weight: .medium).familyName ?? NSFont.systemFont(ofSize: 56).fontName, anchor: PositionAnchor = .topLeft,
             startTime: CGFloat = 0, duration: CGFloat = 5, isOn: Bool = true,
-            isVisible: Bool = true, propertyKeyframes: [PropertyKeyframe] = []
+            isVisible: Bool = true, opacity: CGFloat = 1.0, propertyKeyframes: [PropertyKeyframe] = []
         ) {
             self.id=id; self.kind=kind; self.name=name; self.color=color
             self.text=text ?? (kind == .text ? name : "")
             self.x=x; self.y=y; self.width=width; self.height=height; self.cornerRadius=max(0,cornerRadius)
-            self.fontSize=fontSize; self.anchor=anchor; self.startTime=startTime
-            self.duration=duration; self.isOn=isOn; self.isVisible=isVisible
+            self.fontSize=fontSize; self.fontName=fontName; self.anchor=anchor; self.startTime=startTime
+            self.duration=duration; self.isOn=isOn; self.isVisible=isVisible; self.opacity=opacity
             self.propertyKeyframes = propertyKeyframes.sorted { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
         }
 
         func currentTransform() -> TransformValue {
-            TransformValue(x:x,y:y,width:width,height:height)
+            TransformValue(x:x,y:y,width:width,height:height,scaleX:1,scaleY:1,rotation:0)
         }
 
         func copyLayer() -> LayerModel {
             LayerModel(id:id, kind:kind, name:name, color:color, text:text, x:x, y:y,
-                       width:width, height:height, cornerRadius:cornerRadius, fontSize:fontSize, anchor:anchor,
+                       width:width, height:height, cornerRadius:cornerRadius, fontSize:fontSize, fontName:fontName, anchor:anchor,
                        startTime:startTime, duration:duration, isOn:isOn,
-                       isVisible:isVisible, propertyKeyframes:propertyKeyframes)
+                       isVisible:isVisible, opacity:opacity, propertyKeyframes:propertyKeyframes)
         }
     }
 
@@ -224,6 +238,7 @@ extension MainViewController {
         let startTime: CGFloat
         let duration: CGFloat
         let isVisible: Bool
+        let opacity: CGFloat
         let keyframeFrames: [Int]
     }
 

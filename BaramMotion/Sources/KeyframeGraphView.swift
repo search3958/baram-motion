@@ -235,18 +235,22 @@ final class KeyframeGraphView: NSView {
         case .y: return .systemGreen
         case .width: return .systemBlue
         case .height: return .systemOrange
+        case .scaleX: return .systemIndigo
+        case .scaleY: return .systemBrown
+        case .rotation: return .systemGray
         case .cornerRadius: return .systemPurple
         case .color: return .systemTeal
         case .text: return .systemPink
+        case .font: return .systemMint
         case .isOn: return .systemYellow
         }
     }
 
     private func graphValue(for key: MainViewController.PropertyKeyframe, property: MainViewController.AnimatedProperty) -> CGFloat {
         switch property {
-        case .x,.y,.width,.height,.cornerRadius: return key.scalar
+        case .x,.y,.width,.height,.scaleX,.scaleY,.rotation,.cornerRadius: return key.scalar
         case .isOn: return key.boolValue ? 1 : 0
-        case .text: return 0
+        case .text, .font: return 0
         case .color: return key.scalar
         }
     }
@@ -356,7 +360,7 @@ final class KeyframeGraphView: NSView {
         var value: CGFloat? = nil
 
         switch drag.point.property {
-        case .x, .y, .width, .height, .cornerRadius, .color:
+        case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .cornerRadius, .color:
             // Graph Y axis is inverted: moving the mouse downward decreases the value.
             value = drag.startValue - deltaY / max(0.1, valueScale)
             if drag.point.property == .width || drag.point.property == .height { value = max(1, value ?? 1) }
@@ -364,7 +368,7 @@ final class KeyframeGraphView: NSView {
             if drag.point.property == .color { value = max(0, min(1, value ?? 0)) }
         case .isOn:
             value = (drag.startValue - deltaY / max(0.1, valueScale)) >= 0.5 ? 1 : 0
-        case .text:
+        case .text, .font:
             value = nil
         }
 
@@ -404,11 +408,15 @@ final class KeyframeGraphView: NSView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        if handleDrag != nil {
-            addCursorRect(bounds, cursor: .crosshair)
-        } else {
-            addCursorRect(bounds, cursor: .arrow)
-        }
+        let mouse = convert(window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil)
+        addCursorRect(bounds, cursor: hitHandle(at: mouse) != nil ? .crosshair : .arrow)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        NSCursor.arrow.set()
+        let p = convert(event.locationInWindow, from: nil)
+        if hitHandle(at: p) != nil { NSCursor.crosshair.set() }
+        window?.invalidateCursorRects(for: self)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -461,56 +469,38 @@ final class KeyframeGraphView: NSView {
 
     private func hitHandle(at p: CGPoint) -> HandleDragState? {
         guard let id = selectedLayerID,
-              let layer = layers.first(where: { $0.id == id }),
-              let property = selectedProperty,
-              let frame = selectedKeyframeFrame else {
+              let layer = layers.first(where: { $0.id == id }) else {
             return nil
         }
 
-        let keys = layer.propertyKeyframes
-            .filter { $0.property == property }
-            .sorted { $0.frame < $1.frame }
-
-        guard let keyIndex = keys.firstIndex(where: { $0.frame == frame }),
-              keyIndex < keys.count - 1 else {
-            return nil
-        }
-
-        let key = keys[keyIndex]
-        let nextKey = keys[keyIndex + 1]
-        let point = CGPoint(
-            x: frameToX(key.frame),
-            y: valueToY(graphValue(for: key, property: property))
-        )
-        let nextPoint = CGPoint(
-            x: frameToX(nextKey.frame),
-            y: valueToY(graphValue(for: nextKey, property: property))
-        )
-        let frameRangePixels = max(1, CGFloat(nextKey.frame - key.frame) * timeScale)
-        let valueRangePixels = nextPoint.y - point.y
-
-        let handlePoints = [
-            graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: true),
-            graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: false)
-        ]
-
-        for (handleIndex, handlePoint) in handlePoints.enumerated() {
-            let distance = hypot(handlePoint.x - p.x, handlePoint.y - p.y)
-            if distance <= 18 {
-                return HandleDragState(
-                    layerID: id,
-                    property: property,
-                    frame: frame,
-                    handleIndex: handleIndex,
-                    startHandle: handleIndex == 0 ? key.easing.cp1 : key.easing.cp2,
-                    startMouse: p,
-                    frameRangePixels: frameRangePixels,
-                    valueRangePixels: valueRangePixels
-                )
+        var best: (HandleDragState, CGFloat)?
+        for property in MainViewController.AnimatedProperty.allCases where property.isNumeric {
+            let keys = layer.propertyKeyframes.filter { $0.property == property }.sorted { $0.frame < $1.frame }
+            guard keys.count >= 2 else { continue }
+            for index in 0..<(keys.count - 1) {
+                let key = keys[index]
+                let nextKey = keys[index + 1]
+                let point = CGPoint(x: frameToX(key.frame), y: valueToY(graphValue(for: key, property: property)))
+                let nextPoint = CGPoint(x: frameToX(nextKey.frame), y: valueToY(graphValue(for: nextKey, property: property)))
+                let frameRangePixels = max(1, CGFloat(nextKey.frame - key.frame) * timeScale)
+                let valueRangePixels = nextPoint.y - point.y
+                let handlePoints = [
+                    graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: true),
+                    graphHandlePoint(key: key, nextKey: nextKey, point: point, nextPoint: nextPoint, isStart: false)
+                ]
+                for (handleIndex, handlePoint) in handlePoints.enumerated() {
+                    let distance = hypot(handlePoint.x - p.x, handlePoint.y - p.y)
+                    guard distance <= 18 else { continue }
+                    let candidate = HandleDragState(
+                        layerID: id, property: property, frame: key.frame, handleIndex: handleIndex,
+                        startHandle: handleIndex == 0 ? key.easing.cp1 : key.easing.cp2,
+                        startMouse: p, frameRangePixels: frameRangePixels, valueRangePixels: valueRangePixels
+                    )
+                    if best == nil || distance < best!.1 { best = (candidate, distance) }
+                }
             }
         }
-
-        return nil
+        return best?.0
     }
 
     private func nearestProperty(to p: CGPoint) -> MainViewController.AnimatedProperty? {

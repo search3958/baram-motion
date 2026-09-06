@@ -86,6 +86,10 @@ extension MainViewController {
         widthField = nil
         heightField = nil
         fontSizeField = nil
+        fontPopup = nil
+        scaleXField = nil
+        scaleYField = nil
+        rotationField = nil
         switchWidthField = nil
         switchHeightField = nil
         cornerRadiusField = nil
@@ -211,6 +215,9 @@ extension MainViewController {
         addAnimatedNumericRow(stack: stack, title: "Y", fieldValue: evaluated.y, property: .y, action: #selector(positionFieldChanged(_:)), targetField: &yField, layer: layer)
         addAnimatedNumericRow(stack: stack, title: "幅", fieldValue: evaluated.width, property: .width, action: #selector(sizeFieldChanged(_:)), targetField: &widthField, layer: layer)
         addAnimatedNumericRow(stack: stack, title: "高さ", fieldValue: evaluated.height, property: .height, action: #selector(sizeFieldChanged(_:)), targetField: &heightField, layer: layer)
+        addAnimatedNumericRow(stack: stack, title: "Xスケール", fieldValue: evaluated.scaleX, property: .scaleX, action: #selector(transformFieldChanged(_:)), targetField: &scaleXField, layer: layer)
+        addAnimatedNumericRow(stack: stack, title: "Yスケール", fieldValue: evaluated.scaleY, property: .scaleY, action: #selector(transformFieldChanged(_:)), targetField: &scaleYField, layer: layer)
+        addAnimatedNumericRow(stack: stack, title: "角度", fieldValue: evaluated.rotation, property: .rotation, action: #selector(transformFieldChanged(_:)), targetField: &rotationField, layer: layer)
         let cornerField = makeNumericField(evaluatedCornerRadius(for: layer, frame: playbackController.currentFrame))
         cornerField.target = self; cornerField.action = #selector(cornerRadiusChanged(_:)); cornerRadiusField = cornerField
         stack.addArrangedSubview(makeAnimatedRow(title: "角丸", control: cornerField, property: .cornerRadius, layer: layer))
@@ -250,6 +257,15 @@ extension MainViewController {
             let fontControl = makeNumericField(layer.fontSize)
             fontControl.target = self; fontControl.action = #selector(fontSizeChanged(_:)); fontSizeField = fontControl
             stack.addArrangedSubview(makeInspectorRow(title: "文字サイズ", control: fontControl))
+
+            let popup = NSPopUpButton()
+            popup.addItems(withTitles: NSFontManager.shared.availableFontFamilies.sorted())
+            popup.selectItem(withTitle: evaluatedFontName(for: layer, frame: playbackController.currentFrame))
+            popup.target = self
+            popup.action = #selector(fontChanged(_:))
+            popup.widthAnchor.constraint(equalToConstant: 170).isActive = true
+            fontPopup = popup
+            stack.addArrangedSubview(makeAnimatedRow(title: "フォント", control: popup, property: .font, layer: layer))
         }
 
         // Remove button

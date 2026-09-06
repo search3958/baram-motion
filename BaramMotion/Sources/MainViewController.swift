@@ -47,6 +47,10 @@ final class MainViewController: NSViewController {
     var heightField: NSTextField?
     var cornerRadiusField: NSTextField?
     var fontSizeField: NSTextField?
+    var fontPopup: NSPopUpButton?
+    var scaleXField: NSTextField?
+    var scaleYField: NSTextField?
+    var rotationField: NSTextField?
     var switchWidthField: NSTextField?
     var switchHeightField: NSTextField?
 

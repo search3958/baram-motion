@@ -6,10 +6,14 @@ final class PreviewElementView: NSView {
     let kind: MainViewController.LayerKind
     var backgroundColor: NSColor  =  .white { didSet { needsDisplay  =  true; updateSwitchView() } }
     var fontSize: CGFloat  =  48 { didSet { needsDisplay  =  true } }
+    var fontName: String = NSFont.systemFont(ofSize: 48, weight: .medium).fontName { didSet { needsDisplay = true } }
     var text: String  =  "" { didSet { needsDisplay  =  true } }
+    var scaleX: CGFloat = 1 { didSet { needsDisplay = true; applyPresentationTransform() } }
+    var scaleY: CGFloat = 1 { didSet { needsDisplay = true; applyPresentationTransform() } }
+    var rotation: CGFloat = 0 { didSet { needsDisplay = true; applyPresentationTransform() } }
     var isOn: Bool  =  true { didSet { updateSwitchView() } }
     var switchTint: Color  =  .accentColor { didSet { updateSwitchView() } }
-    var cornerRadius: CGFloat = 8 { didSet { layer?.cornerRadius = cornerRadius; needsDisplay = true } }
+    var cornerRadius: CGFloat = 8 { didSet { applyContinuousCornerRadius(); needsDisplay = true } }
 
     var onSelect: ((UUID) -> Void)?
     var onBeginMove: ((UUID) -> Void)?
@@ -25,6 +29,8 @@ final class PreviewElementView: NSView {
         self.layerID = layerID; self.kind = kind
         super.init(frame:.zero)
         wantsLayer = true
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = false
         layer?.cornerRadius = 6
         translatesAutoresizingMaskIntoConstraints = false
         if kind == .toggle {
@@ -37,6 +43,7 @@ final class PreviewElementView: NSView {
 
     override func layout() {
         super.layout()
+        applyContinuousCornerRadius()
         guard let host = switchHostingView else { return }
         // Native switch aspect ratio (~1.65:1), fitted into requested layer bounds.
         let ratio: CGFloat  =  1.65
@@ -48,16 +55,29 @@ final class PreviewElementView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        layer?.backgroundColor = nil
         guard kind != .toggle else { return }
         switch kind {
         case .text:
-            let attrs:[NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:fontSize,weight:.medium),.foregroundColor:backgroundColor]
+            let font = NSFontManager.shared.font(withFamily: fontName, traits: [], weight: 5, size: fontSize) ?? NSFont(name: fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: .medium)
+            let attrs:[NSAttributedString.Key:Any] = [.font:font,.foregroundColor:backgroundColor]
             NSString(string:text).draw(in: bounds.insetBy(dx:2,dy:0), withAttributes:attrs)
         case .rectangle:
-            backgroundColor.setFill()
-            NSBezierPath(roundedRect:bounds,xRadius:min(cornerRadius,bounds.width/2),yRadius:min(cornerRadius,bounds.height/2)).fill()
+            layer?.backgroundColor = backgroundColor.cgColor
+            applyContinuousCornerRadius()
+            return
         case .toggle: break
         }
+    }
+
+    private func applyContinuousCornerRadius() {
+        guard let layer else { return }
+        layer.cornerCurve = .continuous
+        layer.cornerRadius = max(0, min(cornerRadius, min(bounds.width, bounds.height) * 0.5))
+    }
+
+    private func applyPresentationTransform() {
+        layer?.setAffineTransform(CGAffineTransform(rotationAngle: rotation * .pi / 180).scaledBy(x: max(0.001, scaleX), y: max(0.001, scaleY)))
     }
 
     func updateAppearance(selected: Bool) {

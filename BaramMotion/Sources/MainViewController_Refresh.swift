@@ -28,7 +28,7 @@ extension MainViewController {
         layers.map {
             LayerModelProxy(id:$0.id, kindDisplayName:$0.kind.displayName, name:$0.name,
                             color:$0.color, startTime:$0.startTime, duration:$0.duration,
-                            isVisible:$0.isVisible, keyframeFrames:Array(Set($0.propertyKeyframes.map(\.frame))).sorted())
+                            isVisible:$0.isVisible, opacity:$0.opacity, keyframeFrames:Array(Set($0.propertyKeyframes.map(\.frame))).sorted())
         }
     }
 
@@ -49,7 +49,8 @@ extension MainViewController {
             x: evaluatedNumeric(for: layer, property: .x, frame: frame, defaultValue: layer.x),
             y: evaluatedNumeric(for: layer, property: .y, frame: frame, defaultValue: layer.y),
             width: max(1, evaluatedNumeric(for: layer, property: .width, frame: frame, defaultValue: layer.width)),
-            height: max(1, evaluatedNumeric(for: layer, property: .height, frame: frame, defaultValue: layer.height))
+            height: max(1, evaluatedNumeric(for: layer, property: .height, frame: frame, defaultValue: layer.height)),
+            scaleX: 1, scaleY: 1, rotation: 0
         )
     }
 
@@ -68,6 +69,16 @@ extension MainViewController {
         }
         if keys[nextIndex].frame == frame { return keys[nextIndex].text }
         return keys[nextIndex - 1].text
+    }
+
+    func evaluatedFontName(for layer: LayerModel, frame: Int) -> String {
+        let keys = layer.propertyKeyframes.filter { $0.property == .font }.sorted { $0.frame < $1.frame }
+        guard let first = keys.first else { return layer.fontName }
+        if frame <= first.frame { return first.fontName.isEmpty ? layer.fontName : first.fontName }
+        guard let nextIndex = keys.firstIndex(where: { $0.frame >= frame }) else { return keys.last?.fontName.isEmpty == true ? layer.fontName : (keys.last?.fontName ?? layer.fontName) }
+        if keys[nextIndex].frame == frame { return keys[nextIndex].fontName.isEmpty ? layer.fontName : keys[nextIndex].fontName }
+        let value = keys[nextIndex - 1].fontName
+        return value.isEmpty ? layer.fontName : value
     }
 
     func evaluatedSwitchState(for layer: LayerModel, frame: Int) -> Bool {
@@ -118,6 +129,7 @@ extension MainViewController {
             element.backgroundColor=evaluatedColor
             element.switchTint=Color(nsColor:evaluatedColor)
             element.fontSize=layer.fontSize
+            element.fontName=evaluatedFontName(for: layer, frame: frame)
             element.text=evaluatedText(for:layer,frame:frame)
             element.isOn=evaluatedSwitchState(for:layer,frame:frame)
             let transform=evaluatedTransform(for:layer,frame:frame)
@@ -125,8 +137,11 @@ extension MainViewController {
             displayLayer.x=transform.x; displayLayer.y=transform.y
             displayLayer.width=transform.width; displayLayer.height=transform.height
             displayLayer.cornerRadius = evaluatedCornerRadius(for: layer, frame: frame)
-            element.cornerRadius = displayLayer.cornerRadius
+            element.cornerRadius = min(displayLayer.cornerRadius, min(displayLayer.width, displayLayer.height) * 0.5)
             element.frame=frameForLayer(displayLayer)
+            element.scaleX = transform.scaleX
+            element.scaleY = transform.scaleY
+            element.rotation = transform.rotation
             element.onSelect={ [weak self] id in self?.selectLayer(id, shouldRefreshPreview: false) }
             element.onBeginMove={ [weak self] id in self?.beginPreviewLayerEditing(id) }
             element.onMove={ [weak self] id,delta in self?.movePreviewLayer(id,deltaX:delta.x,deltaY:delta.y) }
@@ -181,13 +196,14 @@ extension MainViewController {
         yField?.stringValue = formatNumber(transform.y)
         widthField?.stringValue = formatNumber(transform.width)
         heightField?.stringValue = formatNumber(transform.height)
+        scaleXField?.stringValue = formatNumber(transform.scaleX)
+        scaleYField?.stringValue = formatNumber(transform.scaleY)
+        rotationField?.stringValue = formatNumber(transform.rotation)
 
         cornerRadiusField?.stringValue = formatNumber(evaluatedCornerRadius(for: layer, frame: playbackController.currentFrame))
 
-        fontSizeField?.stringValue =
-            formatNumber(
-                layer.fontSize
-            )
+        fontSizeField?.stringValue = formatNumber(layer.fontSize)
+        fontPopup?.selectItem(withTitle: evaluatedFontName(for: layer, frame: playbackController.currentFrame))
 
         let switchTransform = evaluatedTransform(for: layer, frame: playbackController.currentFrame)
         switchWidthField?.stringValue = formatNumber(switchTransform.width)
@@ -199,6 +215,9 @@ extension MainViewController {
 
         if let textContentField, layer.kind == .text {
             textContentField.stringValue = evaluatedText(for: layer, frame: playbackController.currentFrame)
+        }
+        if let fontPopup, layer.kind == .text {
+            fontPopup.selectItem(withTitle: evaluatedFontName(for: layer, frame: playbackController.currentFrame))
         }
 
     }

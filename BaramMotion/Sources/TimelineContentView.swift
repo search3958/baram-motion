@@ -65,10 +65,31 @@ final class TimelineContentView: NSView {
             rowColor.setFill()
             NSRect(x:0,y:y,width:bounds.width,height:rowHeight).fill()
             let rect = NSRect(x:layer.startTime*timelineScale,y:y+5,width:max(20,layer.duration*timelineScale),height:rowHeight-10)
-            layer.color.withAlphaComponent(layer.id==selectedLayerID ? 0.88:0.66).setFill()
+            ctx.saveGState()
+            let centerX = rect.midX
+            let centerY = rect.midY
+            ctx.translateBy(x: centerX, y: centerY)
+            ctx.scaleBy(x: 1.8, y: 1.2)
+            ctx.translateBy(x: -centerX, y: -centerY)
+            layer.color.withAlphaComponent(layer.opacity * (layer.id==selectedLayerID ? 0.88:0.66)).setFill()
             let path = NSBezierPath(roundedRect:rect,xRadius:6,yRadius:6); path.fill()
             if layer.id==selectedLayerID { NSColor.controlAccentColor.setStroke(); path.lineWidth = 2; path.stroke() }
-            NSString(string:layer.name).draw(in:rect.insetBy(dx:10,dy:6),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:layer.id==selectedLayerID ? .semibold:.medium),.foregroundColor:NSColor.white])
+            ctx.restoreGState()
+            let kindSymbol: String
+            switch layer.kindDisplayName {
+            case "Text": kindSymbol = "textformat"
+            case "Rectangle": kindSymbol = "rectangle"
+            default: kindSymbol = "switch.2"
+            }
+            if let image = NSImage(systemSymbolName: kindSymbol, accessibilityDescription: layer.kindDisplayName) {
+                image.isTemplate = true
+                let iconRect = NSRect(x: rect.minX + 8, y: y + 8, width: 16, height: 16)
+                let size = image.size
+                let scale = min(iconRect.width / size.width, iconRect.height / size.height)
+                let drawSize = CGSize(width: size.width * scale, height: size.height * scale)
+                let drawRect = NSRect(x: iconRect.midX - drawSize.width / 2, y: iconRect.midY - drawSize.height / 2, width: drawSize.width, height: drawSize.height)
+                image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+            }
             for frame in layer.keyframeFrames { drawDiamond(atX:CGFloat(frame)/30*timelineScale, centerY:y+rowHeight/2, selected:frame==currentFrame, context:ctx) }
         }
     }
@@ -131,7 +152,7 @@ final class TimelineContentView: NSView {
             return
         }
         guard interaction != .none, let activeLayerID, let active = layers.first(where:{$0.id==activeLayerID}) else{return}
-        let deltaTime = round(((p.x-dragStartMouseX)/timelineScale)*30)/30
+        let deltaTime = (p.x-dragStartMouseX)/timelineScale
         var start = originalStartTime, duration = originalDuration
         switch interaction {
         case .move: start = max(0,originalStartTime+deltaTime)

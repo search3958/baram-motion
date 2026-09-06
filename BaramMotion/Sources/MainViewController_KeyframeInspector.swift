@@ -41,9 +41,9 @@ extension MainViewController {
     func toggleKeyframe(property: AnimatedProperty, layer: LayerModel, frame: Int) {
         if let idx = layer.propertyKeyframes.firstIndex(where: { $0.frame == frame && $0.property == property }) { layer.propertyKeyframes.remove(at: idx); return }
         switch property {
-        case .x, .y, .width, .height:
+        case .x, .y, .width, .height, .scaleX, .scaleY, .rotation:
             let t = evaluatedTransform(for: layer, frame: frame)
-            let value: CGFloat = property == .x ? t.x : property == .y ? t.y : property == .width ? t.width : t.height
+            let value: CGFloat = property == .x ? t.x : property == .y ? t.y : property == .width ? t.width : property == .height ? t.height : property == .scaleX ? t.scaleX : property == .scaleY ? t.scaleY : t.rotation
             layer.propertyKeyframes.append(.scalar(property, frame: frame, value: value))
         case .cornerRadius:
             layer.propertyKeyframes.append(.scalar(.cornerRadius, frame: frame, value: evaluatedCornerRadius(for: layer, frame: frame)))
@@ -51,6 +51,8 @@ extension MainViewController {
             layer.propertyKeyframes.append(.color(frame, value: ColorValue.from(evaluatedColor(for: layer, frame: frame))))
         case .text:
             layer.propertyKeyframes.append(.text(frame, value: evaluatedText(for: layer, frame: frame)))
+        case .font:
+            layer.propertyKeyframes.append(.font(frame, value: evaluatedFontName(for: layer, frame: frame)))
         case .isOn:
             layer.propertyKeyframes.append(.state(frame, value: evaluatedSwitchState(for: layer, frame: frame)))
         }
@@ -70,6 +72,8 @@ extension MainViewController {
             switch property {
             case .x,.y: layer.propertyKeyframes[idx].scalar = value
             case .width,.height: layer.propertyKeyframes[idx].scalar = max(1, value)
+            case .scaleX,.scaleY: layer.propertyKeyframes[idx].scalar = max(0.001, value)
+            case .rotation: layer.propertyKeyframes[idx].scalar = value
             case .cornerRadius: layer.propertyKeyframes[idx].scalar = max(0, value)
             case .color:
                 let old = layer.propertyKeyframes[idx].colorValue ?? ColorValue.from(layer.color)
@@ -79,7 +83,7 @@ extension MainViewController {
                 layer.propertyKeyframes[idx].colorValue = ColorValue(r: min(1,old.r*factor), g:min(1,old.g*factor), b:min(1,old.b*factor), a:old.a)
                 layer.propertyKeyframes[idx].scalar = brightness
             case .isOn: layer.propertyKeyframes[idx].boolValue = value >= 0.5
-            case .text: break
+            case .text, .font: break
             }
         }
         normalizeKeyframes(layer); selectedGraphProperty=property; selectedGraphFrame=target; playbackFrameChanged(target)

@@ -31,21 +31,30 @@ final class TimelineLayerPanelView: NSView {
             let l=layers[index]; let y=firstY-CGFloat(index)*rowHeight
             guard y+rowHeight >= 0 && y <= bounds.height else { continue }
             if l.id==selectedLayerID { NSColor.selectedContentBackgroundColor.withAlphaComponent(0.25).setFill(); NSRect(x:0,y:y,width:bounds.width-1,height:rowHeight).fill() }
-            let eyeRect=NSRect(x:8,y:y+8,width:18,height:18)
-            let image=NSImage(systemSymbolName:l.isVisible ? "eye.fill":"eye.slash",accessibilityDescription:l.isVisible ? "表示":"非表示")
-            image?.isTemplate=true; image?.draw(in:eyeRect)
-            let iconText:NSString
-            switch l.kindDisplayName { case "Text": iconText="T"; case "Rectangle": iconText="▰"; default: iconText="⌽" }
-            iconText.draw(at:NSPoint(x:32,y:y+9),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:.semibold),.foregroundColor:NSColor.secondaryLabelColor])
-            NSString(string:l.name).draw(in:NSRect(x:50,y:y+7,width:bounds.width-58,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:l.id==selectedLayerID ? .semibold:.regular),.foregroundColor:NSColor.labelColor])
+            let eyeRect=NSRect(x:8,y:y+10,width:16,height:16)
+            if let image=NSImage(systemSymbolName:l.isVisible ? "eye.fill":"eye.slash",accessibilityDescription:l.isVisible ? "表示":"非表示") {
+                drawSymbol(image, in: eyeRect, color: l.isVisible ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor)
+            } else {
+                NSLog("[Baram Motion] ERROR: Missing visibility SF Symbol.")
+            }
+            NSString(string:l.name).draw(in:NSRect(x:30,y:y+7,width:bounds.width-40,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:l.id==selectedLayerID ? .semibold:.regular),.foregroundColor:NSColor.labelColor])
         }
+    }
+
+    private func drawSymbol(_ image: NSImage, in rect: NSRect, color: NSColor) {
+        guard rect.width > 0, rect.height > 0 else { NSLog("[Baram Motion] ERROR: Invalid layer icon rect."); return }
+        let size = image.size
+        let scale = min(rect.width / size.width, rect.height / size.height)
+        let drawSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let drawRect = NSRect(x: rect.midX - drawSize.width / 2, y: rect.midY - drawSize.height / 2, width: drawSize.width, height: drawSize.height)
+        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
     }
 
     override func mouseDown(with event:NSEvent) {
         let p=convert(event.locationInWindow,from:nil)
         guard let index=hitIndex(y:p.y) else{return}
         let l=layers[index]
-        if p.x <= 30 { delegate?.timelineLayerPanel(self,didToggleVisibility:l.id); return }
+        if p.x <= 24 { delegate?.timelineLayerPanel(self,didToggleVisibility:l.id); return }
         draggingID=l.id; delegate?.timelineLayerPanel(self,didSelectLayer:l.id); delegate?.timelineLayerPanel(self,didBeginMovingLayer:l.id)
     }
     override func mouseDragged(with event:NSEvent) {

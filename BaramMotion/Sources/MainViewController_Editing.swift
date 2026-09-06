@@ -462,6 +462,42 @@ extension MainViewController {
         NSLog("[Baram Motion] Text changed at frame %d: %@", frame, sender.stringValue)
     }
 
+    @objc func transformFieldChanged(_ sender: NSTextField) {
+        guard let layer = selectedLayer else { return }
+        guard let number = Double(sender.stringValue), number.isFinite else { return }
+        let property: AnimatedProperty = sender === scaleXField ? .scaleX : sender === scaleYField ? .scaleY : .rotation
+        let before = captureSnapshot()
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) {
+            layer.propertyKeyframes[idx].scalar = CGFloat(number)
+        } else if layer.propertyKeyframes.contains(where: { $0.property == property }) {
+            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: CGFloat(number)))
+        }
+        normalizeKeyframes(layer)
+        finishMutation(before: before, actionName: "\(property.rawValue) 変更")
+    }
+
+    @objc func fontChanged(_ sender: NSPopUpButton) {
+        guard let layer = selectedLayer, layer.kind == .text else { return }
+        let before = captureSnapshot()
+        let frame = playbackController.currentFrame
+        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .font && $0.frame == frame }) {
+            layer.propertyKeyframes[idx].fontName = sender.titleOfSelectedItem ?? ""
+        } else if layer.propertyKeyframes.contains(where: { $0.property == .font }) {
+            if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .font }) {
+                layer.propertyKeyframes[idx].fontName = sender.titleOfSelectedItem ?? ""
+            }
+        } else if layer.propertyKeyframes.contains(where: { $0.property == .text && $0.frame == frame }) {
+            if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == .text && $0.frame == frame }) {
+                layer.propertyKeyframes[idx].fontName = sender.titleOfSelectedItem ?? ""
+            }
+        } else {
+            layer.propertyKeyframes.append(.font(frame, value: sender.titleOfSelectedItem ?? ""))
+            normalizeKeyframes(layer)
+        }
+        finishMutation(before: before, actionName: "フォント変更")
+    }
+
     func setSwitchState(for id: UUID, isOn: Bool) {
         guard let layer = layers.first(where: { $0.id == id }), layer.kind == .toggle else {
             NSLog("[Baram Motion] ERROR: Switch layer not found."); return
@@ -566,7 +602,7 @@ extension MainViewController {
             displayLayer.width = max(1, transform.width); displayLayer.height = max(1, transform.height)
             displayLayer.cornerRadius = evaluatedCornerRadius(for: layer, frame: frame)
             element.frame = frameForLayer(displayLayer)
-            element.cornerRadius = displayLayer.cornerRadius
+            element.cornerRadius = min(displayLayer.cornerRadius, min(displayLayer.width, displayLayer.height) * 0.5)
         }
         refreshInspectorValues()
         refreshKeyframeInspector()
@@ -752,11 +788,13 @@ extension MainViewController {
                 left.width != right.width ||
                 left.height != right.height ||
                 left.fontSize != right.fontSize ||
+                left.fontName != right.fontName ||
                 left.anchor != right.anchor ||
                 left.startTime != right.startTime ||
                 left.duration != right.duration ||
                 left.isOn != right.isOn ||
                 left.isVisible != right.isVisible ||
+                left.opacity != right.opacity ||
                 left.propertyKeyframes != right.propertyKeyframes {
 
                 return true
