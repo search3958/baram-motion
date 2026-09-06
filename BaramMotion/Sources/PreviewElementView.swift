@@ -46,36 +46,136 @@ final class PreviewElementView: NSView {
         host.frame=NSRect(x:(bounds.width-fw)/2,y:(bounds.height-fh)/2,width:fw,height:fh)
     }
 
-    override func draw(_ dirtyRect:NSRect){
+    override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard kind != .toggle else { return }
+
         switch kind {
         case .rectangle:
-            layer?.backgroundColor = backgroundColor.cgColor
-            applyContinuousCornerRadius()
-            let strokeRect=bounds.insetBy(dx:borderInsetForStroke,dy:borderInsetForStroke)
-            let r=min(cornerRadius,strokeRect.width*0.5,strokeRect.height*0.5)
-            let path=NSBezierPath(roundedRect:strokeRect,xRadius:r,yRadius:r)
-            drawStroke(path)
+            drawRectangleElement()
         case .text:
-            let font=NSFontManager.shared.font(withFamily:fontName,traits:[],weight:5,size:fontSize) ?? NSFont(name:fontName,size:fontSize) ?? NSFont.systemFont(ofSize:fontSize,weight:.medium)
-            let style=NSMutableParagraphStyle(); style.alignment=textHorizontalAlignment.nsAlignment; style.lineBreakMode = .byWordWrapping
-            let attrs:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:backgroundColor,.paragraphStyle:style]
-            let textRect=bounds.insetBy(dx:borderInsetForFill,dy:borderInsetForFill)
-            let attr=NSAttributedString(string:text,attributes:attrs)
-            let used=attr.boundingRect(with:NSSize(width:max(1,textRect.width),height:.greatestFiniteMagnitude),options:[.usesLineFragmentOrigin,.usesFontLeading])
-            let y:CGFloat
-            switch textVerticalAlignment { case .top: y=textRect.maxY-used.height; case .center: y=textRect.midY-used.height*0.5; case .bottom: y=textRect.minY }
-            attr.draw(in:NSRect(x:textRect.minX,y:y,width:textRect.width,height:min(textRect.height,max(used.height,textRect.height))))
-            let strokeRect=bounds.insetBy(dx:borderInsetForStroke,dy:borderInsetForStroke)
-            let path=NSBezierPath(rect:strokeRect); drawStroke(path)
-        case .toggle: break
+            drawTextElement()
+        case .toggle:
+            break
         }
     }
 
-    private var borderInsetForFill:CGFloat { borderPosition == .inside ? borderWidth : borderPosition == .centered ? borderWidth*0.5 : 0 }
-    private var borderInsetForStroke:CGFloat { borderPosition == .inside ? borderWidth*0.5 : borderPosition == .centered ? 0 : -borderWidth*0.5 }
-    private func drawStroke(_ path:NSBezierPath){ guard borderWidth>0 else{return}; borderColor.setStroke(); path.lineWidth=borderWidth; path.stroke() }
+    private func drawRectangleElement() {
+        guard bounds.width > 0, bounds.height > 0 else {
+            NSLog("[Baram Motion] WARNING: Rectangle bounds are empty.")
+            return
+        }
+
+        layer?.backgroundColor = nil
+
+        if borderPosition == .outside, borderWidth > 0 {
+            // Keep the complete outside border inside this view's drawable area.
+            // The border is painted first and the element fill is inset over it.
+            borderColor.setFill()
+            roundedPath(inset: 0).fill()
+            backgroundColor.setFill()
+            roundedPath(inset: borderWidth).fill()
+            return
+        }
+
+        let fillPath = roundedPath(inset: 0)
+        let strokePath: NSBezierPath?
+        switch borderPosition {
+        case .inside:
+            strokePath = borderWidth > 0 ? roundedPath(inset: borderWidth * 0.5) : nil
+        case .centered:
+            strokePath = borderWidth > 0 ? roundedPath(inset: 0) : nil
+        case .outside:
+            strokePath = nil
+        }
+
+        backgroundColor.setFill()
+        fillPath.fill()
+
+        if let strokePath {
+            drawStroke(strokePath)
+        }
+    }
+
+    private func roundedPath(inset: CGFloat) -> NSBezierPath {
+        let maximumInset = max(0, min(bounds.width, bounds.height) * 0.5 - 0.5)
+        let safeInset = max(0, min(inset, maximumInset))
+        let rect = bounds.insetBy(dx: safeInset, dy: safeInset)
+        let radius = max(0, min(cornerRadius - safeInset, rect.width * 0.5, rect.height * 0.5))
+        return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+    }
+
+    private func drawTextElement() {
+        guard !text.isEmpty, bounds.width > 0, bounds.height > 0 else {
+            if text.isEmpty { NSLog("[Baram Motion] INFO: Text element is empty.") }
+            return
+        }
+
+        let font = NSFontManager.shared.font(withFamily: fontName, traits: [], weight: 5, size: fontSize)
+            ?? NSFont(name: fontName, size: fontSize)
+            ?? NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let style = NSMutableParagraphStyle()
+        style.alignment = textHorizontalAlignment.nsAlignment
+        style.lineBreakMode = .byWordWrapping
+
+        let contentInset: CGFloat = borderPosition == .inside ? borderWidth : borderPosition == .centered ? borderWidth * 0.5 : 0
+        let textRect = bounds.insetBy(dx: contentInset, dy: contentInset)
+        let baseAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .paragraphStyle: style
+        ]
+        let measure = NSAttributedString(string: text, attributes: baseAttributes)
+        let used = measure.boundingRect(
+            with: NSSize(width: max(1, textRect.width), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let drawY: CGFloat
+        switch textVerticalAlignment {
+        case .top: drawY = textRect.maxY - used.height
+        case .center: drawY = textRect.midY - used.height * 0.5
+        case .bottom: drawY = textRect.minY
+        }
+        let drawRect = NSRect(
+            x: textRect.minX,
+            y: drawY,
+            width: textRect.width,
+            height: min(textRect.height, max(used.height, textRect.height))
+        )
+
+        let normalizedFontSize = max(fontSize, 1)
+        let strokePercent = max(0, borderWidth * 100 / normalizedFontSize)
+        let fillAttributes = baseAttributes.merging([.foregroundColor: backgroundColor]) { _, new in new }
+
+        guard borderWidth > 0, strokePercent > 0 else {
+            NSAttributedString(string: text, attributes: fillAttributes).draw(in: drawRect)
+            return
+        }
+
+        switch borderPosition {
+        case .outside:
+            // Positive strokeWidth is outline-only. Draw it first, then paint the normal glyph fill over it.
+            let outlineAttributes = baseAttributes.merging([
+                .strokeWidth: strokePercent,
+                .strokeColor: borderColor
+            ]) { _, new in new }
+            NSAttributedString(string: text, attributes: outlineAttributes).draw(in: drawRect)
+            NSAttributedString(string: text, attributes: fillAttributes).draw(in: drawRect)
+        case .inside, .centered:
+            // Negative strokeWidth keeps the glyph fill. Drawing after the fill keeps the outline visible above it.
+            var stroked = fillAttributes
+            stroked[.strokeWidth] = -strokePercent
+            stroked[.strokeColor] = borderColor
+            NSAttributedString(string: text, attributes: stroked).draw(in: drawRect)
+        }
+    }
+
+    private func drawStroke(_ path: NSBezierPath) {
+        guard borderWidth > 0 else { return }
+        borderColor.setStroke()
+        path.lineWidth = borderWidth
+        path.stroke()
+    }
+
     private func applyContinuousCornerRadius(){ guard let l=layer else{return}; l.cornerCurve = .continuous; l.cornerRadius=max(0,min(cornerRadius,min(bounds.width,bounds.height)*0.5)) }
     private func applyBorder(){ guard let l=layer else{return}; l.cornerCurve = .continuous; l.borderWidth = 0 }
     private func applyPresentationTransform(){ layer?.setAffineTransform(CGAffineTransform(rotationAngle: rotation * .pi / 180).scaledBy(x:max(0.001,scaleX),y:max(0.001,scaleY))) }

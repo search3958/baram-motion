@@ -51,6 +51,9 @@ final class MainViewController: NSViewController {
     var scaleXField: NSTextField?
     var scaleYField: NSTextField?
     var rotationField: NSTextField?
+    var baseScaleXField: NSTextField?
+    var baseScaleYField: NSTextField?
+    var baseRotationField: NSTextField?
     var opacityField: NSTextField?
     var borderWidthField: NSTextField?
     var switchWidthField: NSTextField?
@@ -103,6 +106,12 @@ final class MainViewController: NSViewController {
             self.refreshPlaybackUI()
             NSLog("[Baram Motion] Space: playback %@", self.playbackController.isPlaying ? "started" : "stopped")
         }
+        rootView.onUndoPressed = { [weak self] in
+            self?.undoAction()
+        }
+        rootView.onRedoPressed = { [weak self] in
+            self?.redoAction()
+        }
         rootView.wantsLayer = true
         view = rootView
     }
@@ -117,7 +126,7 @@ final class MainViewController: NSViewController {
         super.viewDidAppear()
 
         configureToolbarIfNeeded()
-        view.window?.makeFirstResponder(self)
+        view.window?.makeFirstResponder(view)
         refreshAll()
     }
 

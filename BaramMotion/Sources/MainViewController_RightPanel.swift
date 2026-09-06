@@ -107,6 +107,9 @@ extension MainViewController {
         scaleXField = nil
         scaleYField = nil
         rotationField = nil
+        baseScaleXField = nil
+        baseScaleYField = nil
+        baseRotationField = nil
         opacityField = nil
         borderWidthField = nil
         switchWidthField = nil
@@ -227,6 +230,18 @@ extension MainViewController {
         addAnimatedNumericRow(stack: stack, title: "Xスケール", fieldValue: evaluated.scaleX, property: .scaleX, action: #selector(transformFieldChanged(_:)), targetField: &scaleXField, layer: layer)
         addAnimatedNumericRow(stack: stack, title: "Yスケール", fieldValue: evaluated.scaleY, property: .scaleY, action: #selector(transformFieldChanged(_:)), targetField: &scaleYField, layer: layer)
         addAnimatedNumericRow(stack: stack, title: "角度", fieldValue: evaluated.rotation, property: .rotation, action: #selector(transformFieldChanged(_:)), targetField: &rotationField, layer: layer)
+
+        let baseScaleX = makeNumericField(layer.baseScaleX)
+        baseScaleX.target = self; baseScaleX.action = #selector(baseTransformFieldChanged(_:)); baseScaleX.minimum = 0.001; baseScaleXField = baseScaleX
+        stack.addArrangedSubview(makeInspectorRow(title: "Xスケール ベース", control: baseScaleX))
+
+        let baseScaleY = makeNumericField(layer.baseScaleY)
+        baseScaleY.target = self; baseScaleY.action = #selector(baseTransformFieldChanged(_:)); baseScaleY.minimum = 0.001; baseScaleYField = baseScaleY
+        stack.addArrangedSubview(makeInspectorRow(title: "Yスケール ベース", control: baseScaleY))
+
+        let baseRotation = makeNumericField(layer.baseRotation)
+        baseRotation.target = self; baseRotation.action = #selector(baseTransformFieldChanged(_:)); baseRotationField = baseRotation
+        stack.addArrangedSubview(makeInspectorRow(title: "角度 ベース", control: baseRotation))
         let cornerField = makeNumericField(evaluatedCornerRadius(for: layer, frame: playbackController.currentFrame))
         cornerField.target = self; cornerField.action = #selector(cornerRadiusChanged(_:)); cornerRadiusField = cornerField
         stack.addArrangedSubview(makeAnimatedRow(title: "角丸", control: cornerField, property: .cornerRadius, layer: layer))

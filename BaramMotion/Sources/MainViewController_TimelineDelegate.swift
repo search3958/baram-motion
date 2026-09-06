@@ -3,6 +3,17 @@ import AppKit
 extension MainViewController: TimelineContentViewDelegate {
     func timelineContentView(_ view: TimelineContentView, didSelectLayer id: UUID) { selectLayer(id) }
 
+    func timelineContentView(_ view: TimelineContentView, didToggleVisibility layerID: UUID) {
+        guard let layer = layers.first(where: { $0.id == layerID }) else {
+            NSLog("[Baram Motion] ERROR: Timeline visibility target not found.")
+            return
+        }
+        let before = captureSnapshot()
+        layer.isVisible.toggle()
+        finishMutation(before: before, actionName: layer.isVisible ? "レイヤー表示" : "レイヤー非表示")
+        NSLog("[Baram Motion] Timeline visibility changed: %@ -> %@", layer.name, layer.isVisible ? "visible" : "hidden")
+    }
+
     func timelineContentView(_ view: TimelineContentView, didBeginEditingLayer id: UUID) {
         guard layers.contains(where: { $0.id == id }) else {
             NSLog("[Baram Motion] ERROR: Timeline edit layer not found: %@", id.uuidString)

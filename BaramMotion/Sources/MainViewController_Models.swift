@@ -225,6 +225,9 @@ extension MainViewController {
         var y: CGFloat
         var width: CGFloat
         var height: CGFloat
+        var baseScaleX: CGFloat
+        var baseScaleY: CGFloat
+        var baseRotation: CGFloat
         var cornerRadius: CGFloat
         var fontSize: CGFloat
         var fontName: String
@@ -240,6 +243,7 @@ extension MainViewController {
             opacity: CGFloat = 1, borderWidth: CGFloat = 0, borderColor: NSColor = .labelColor, borderPosition: StrokePosition = .centered,
             textHorizontalAlignment: TextHorizontalAlignment = .center, textVerticalAlignment: TextVerticalAlignment = .center,
             x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
+            scaleX: CGFloat = 1, scaleY: CGFloat = 1, rotation: CGFloat = 0,
             cornerRadius: CGFloat = 8,
             fontSize: CGFloat = 56, fontName: String = NSFont.systemFont(ofSize: 56, weight: .medium).familyName ?? NSFont.systemFont(ofSize: 56).fontName, anchor: PositionAnchor = .topLeft,
             startTime: CGFloat = 0, duration: CGFloat = 5, isOn: Bool = true,
@@ -249,19 +253,39 @@ extension MainViewController {
             self.opacity=max(0,min(1,opacity)); self.borderWidth=max(0,borderWidth); self.borderColor=borderColor; self.borderPosition=borderPosition
             self.textHorizontalAlignment=textHorizontalAlignment; self.textVerticalAlignment=textVerticalAlignment
             self.text=text ?? (kind == .text ? name : "")
-            self.x=x; self.y=y; self.width=width; self.height=height; self.cornerRadius=max(0,cornerRadius)
+            self.x=x; self.y=y; self.width=width; self.height=height
+            self.baseScaleX=max(0.001,scaleX); self.baseScaleY=max(0.001,scaleY); self.baseRotation=rotation
+            self.cornerRadius=max(0,cornerRadius)
             self.fontSize=fontSize; self.fontName=fontName; self.anchor=anchor; self.startTime=startTime
             self.duration=duration; self.isOn=isOn; self.isVisible=isVisible
             self.propertyKeyframes = propertyKeyframes.sorted { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
         }
 
+        // Base transform values are persistent non-keyframed values.
+        // Keep the legacy property names as compatibility accessors so existing code can be evolved incrementally.
+        var scaleX: CGFloat {
+            get { baseScaleX }
+            set { baseScaleX = max(0.001, newValue) }
+        }
+
+        var scaleY: CGFloat {
+            get { baseScaleY }
+            set { baseScaleY = max(0.001, newValue) }
+        }
+
+        var rotation: CGFloat {
+            get { baseRotation }
+            set { baseRotation = newValue }
+        }
+
         func currentTransform() -> TransformValue {
-            TransformValue(x:x,y:y,width:width,height:height,scaleX:1,scaleY:1,rotation:0)
+            TransformValue(x:x,y:y,width:width,height:height,scaleX:baseScaleX,scaleY:baseScaleY,rotation:baseRotation)
         }
 
         func copyLayer() -> LayerModel {
             LayerModel(id:id, kind:kind, name:name, color:color, text:text, opacity:opacity, borderWidth:borderWidth, borderColor:borderColor, borderPosition:borderPosition,
-                       textHorizontalAlignment:textHorizontalAlignment, textVerticalAlignment:textVerticalAlignment, x:x, y:y, width:width, height:height, cornerRadius:cornerRadius, fontSize:fontSize, fontName:fontName, anchor:anchor,
+                       textHorizontalAlignment:textHorizontalAlignment, textVerticalAlignment:textVerticalAlignment, x:x, y:y, width:width, height:height,
+                       scaleX:scaleX, scaleY:scaleY, rotation:rotation, cornerRadius:cornerRadius, fontSize:fontSize, fontName:fontName, anchor:anchor,
                        startTime:startTime, duration:duration, isOn:isOn,
                        isVisible:isVisible, propertyKeyframes:propertyKeyframes)
         }

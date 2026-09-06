@@ -16,7 +16,7 @@ final class KeyframeGraphView: NSView {
     var selectedProperty: MainViewController.AnimatedProperty? { didSet { needsDisplay = true } }
     var selectedKeyframeFrame: Int? { didSet { needsDisplay = true } }
 
-    private let leftAxisWidth: CGFloat = 72
+    private let leftAxisWidth: CGFloat = 44
     private let topAxisHeight: CGFloat = 28
     private var timeScale: CGFloat = 4.0
     private var valueScale: CGFloat = 1.0
@@ -57,16 +57,19 @@ final class KeyframeGraphView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let glass = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18, yRadius: 18)
-        NSColor.windowBackgroundColor.withAlphaComponent(0.72).setFill(); glass.fill()
-        NSColor.separatorColor.withAlphaComponent(0.45).setStroke(); glass.lineWidth = 1; glass.stroke()
+        // The graph sits directly on the parent floating panel's Liquid Glass surface.
+        // Do not draw another panel/background here; that creates a visually nested frame.
         guard let id = selectedLayerID, let layer = layers.first(where: { $0.id == id }) else {
+            valueCenter = 0
+            valueScale = 1
             drawAxes();
             NSString(string: "レイヤーを選択してください").draw(at: NSPoint(x: 16, y: 42), withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor])
             return
         }
+        updateValueViewport(for: layer)
         drawAxes()
-        for property in MainViewController.AnimatedProperty.allCases {
+        let properties = selectedProperty.map { [$0] } ?? MainViewController.AnimatedProperty.allCases
+        for property in properties {
             drawCurve(layer: layer, property: property)
         }
         drawPlayhead()
@@ -91,17 +94,24 @@ final class KeyframeGraphView: NSView {
             NSString(string: "\(frame)").draw(at: NSPoint(x: x + 3, y: 7), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor])
         }
 
-        let valueStep: CGFloat = 50
-        var v = -500.0
-        while valueToY(v) < bounds.height + 80 {
+        let visibleValueHeight = max(40, bounds.height - topAxisHeight - 12)
+        let rawStep = 50 / max(0.01, valueScale)
+        let magnitude = pow(10, floor(log10(max(0.0001, rawStep))))
+        let normalized = rawStep / magnitude
+        let multiplier: CGFloat = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+        let valueStep = magnitude * multiplier
+        let firstValue = floor((valueCenter - (bounds.height - topAxisHeight) * 0.5 / max(0.01, valueScale)) / valueStep) * valueStep
+        var v = firstValue
+        var safety = 0
+        while v <= valueCenter + visibleValueHeight / max(0.01, valueScale) && safety < 100 {
             let y = valueToY(v)
-            if y >= topAxisHeight {
+            if y >= topAxisHeight && y <= bounds.height {
                 NSColor.separatorColor.withAlphaComponent(0.18).setStroke()
                 let path = NSBezierPath(); path.move(to: NSPoint(x: leftAxisWidth, y: y)); path.line(to: NSPoint(x: bounds.width, y: y)); path.lineWidth = 0.5; path.stroke()
-                NSString(string: formatGraphValue(v)).draw(at: NSPoint(x: 8, y: y - 7), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor])
+                NSString(string: formatGraphValue(v)).draw(at: NSPoint(x: 4, y: y - 7), withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor])
             }
             v += valueStep
-            if v > 5000 { break }
+            safety += 1
         }
         let titleAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor]
         NSString(string: "値").draw(at: NSPoint(x: 8, y: topAxisHeight + 5), withAttributes: titleAttrs)
@@ -227,8 +237,7 @@ final class KeyframeGraphView: NSView {
 
     private func drawSelection() {
         guard let property = selectedProperty, let frame = selectedKeyframeFrame else { return }
-        let text = "\(property.rawValue) • frame \(frame)  |  ←→ 時間  ↑↓ 値  |  ⌥スクロール/ピンチで拡大縮小  |  ダブルクリックで追加  |  BackSpaceで削除"
-        NSString(string: text).draw(at: NSPoint(x: 8, y: bounds.height - 20), withAttributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor])
+        NSString(string: "\(property.rawValue) • frame \(frame)").draw(at: NSPoint(x: leftAxisWidth + 8, y: bounds.height - 20), withAttributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor])
     }
 
     private func colorFor(_ property: MainViewController.AnimatedProperty) -> NSColor {
@@ -257,6 +266,59 @@ final class KeyframeGraphView: NSView {
         case .isOn: return key.boolValue ? 1 : 0
         case .text, .font, .borderColor: return 0
         case .color: return key.scalar
+        }
+    }
+
+    private func updateValueViewport(for layer: MainViewController.LayerModel) {
+        let property = selectedProperty
+        guard let property else {
+            valueCenter = 0
+            valueScale = 1
+            return
+        }
+
+        let values: [CGFloat]
+        if property.isNumeric {
+            let keyValues = layer.propertyKeyframes.filter { $0.property == property }.map { graphValue(for: $0, property: property) }
+            let baseValue: CGFloat?
+            switch property {
+            case .scaleX: baseValue = layer.baseScaleX
+            case .scaleY: baseValue = layer.baseScaleY
+            case .rotation: baseValue = layer.baseRotation
+            case .x: baseValue = layer.x
+            case .y: baseValue = layer.y
+            case .width: baseValue = layer.width
+            case .height: baseValue = layer.height
+            case .opacity: baseValue = layer.opacity
+            case .cornerRadius: baseValue = layer.cornerRadius
+            case .borderWidth: baseValue = layer.borderWidth
+            case .color, .isOn: baseValue = graphValueFromBase(property: property, layer: layer)
+            default: baseValue = nil
+            }
+            values = keyValues + (baseValue.map { [$0] } ?? [])
+        } else {
+            values = [0]
+        }
+
+        let minValue = values.min() ?? 0
+        let maxValue = values.max() ?? minValue
+        let span = max(maxValue - minValue, property == .scaleX || property == .scaleY ? 0.2 : property == .rotation ? 20 : 1)
+        valueCenter = (minValue + maxValue) * 0.5
+        if property == .scaleX || property == .scaleY { valueCenter = 1 }
+        if property == .rotation { valueCenter = (minValue + maxValue) * 0.5 }
+
+        let drawableHeight = max(60, bounds.height - topAxisHeight - 18)
+        valueScale = max(0.5, drawableHeight / (span * 1.35))
+    }
+
+    private func graphValueFromBase(property: MainViewController.AnimatedProperty, layer: MainViewController.LayerModel) -> CGFloat {
+        switch property {
+        case .opacity: return layer.opacity
+        case .cornerRadius: return layer.cornerRadius
+        case .borderWidth: return layer.borderWidth
+        case .color: return MainViewController.ColorValue.from(layer.color).brightness
+        case .isOn: return layer.isOn ? 1 : 0
+        default: return 0
         }
     }
 

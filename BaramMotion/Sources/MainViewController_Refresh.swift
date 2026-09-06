@@ -50,9 +50,9 @@ extension MainViewController {
             y: evaluatedNumeric(for: layer, property: .y, frame: frame, defaultValue: layer.y),
             width: max(1, evaluatedNumeric(for: layer, property: .width, frame: frame, defaultValue: layer.width)),
             height: max(1, evaluatedNumeric(for: layer, property: .height, frame: frame, defaultValue: layer.height)),
-            scaleX: max(0.001, evaluatedNumeric(for: layer, property: .scaleX, frame: frame, defaultValue: 1)),
-            scaleY: max(0.001, evaluatedNumeric(for: layer, property: .scaleY, frame: frame, defaultValue: 1)),
-            rotation: evaluatedNumeric(for: layer, property: .rotation, frame: frame, defaultValue: 0)
+            scaleX: max(0.001, evaluatedNumeric(for: layer, property: .scaleX, frame: frame, defaultValue: layer.scaleX)),
+            scaleY: max(0.001, evaluatedNumeric(for: layer, property: .scaleY, frame: frame, defaultValue: layer.scaleY)),
+            rotation: evaluatedNumeric(for: layer, property: .rotation, frame: frame, defaultValue: layer.rotation)
         )
     }
 
@@ -135,7 +135,7 @@ extension MainViewController {
             let evaluatedColor = evaluatedColor(for: layer, frame: frame)
             element.backgroundColor=evaluatedColor
             element.opacity=evaluatedOpacity(for: layer, frame: frame)
-            element.borderWidth=layer.borderWidth
+            element.borderWidth=evaluatedNumeric(for: layer, property: .borderWidth, frame: frame, defaultValue: layer.borderWidth)
             element.borderColor=layer.borderColor
             element.borderPosition=layer.borderPosition
             element.switchTint=Color(nsColor:evaluatedColor)
@@ -212,6 +212,9 @@ extension MainViewController {
         scaleXField?.stringValue = formatNumber(transform.scaleX)
         scaleYField?.stringValue = formatNumber(transform.scaleY)
         rotationField?.stringValue = formatNumber(transform.rotation)
+        baseScaleXField?.stringValue = formatNumber(layer.baseScaleX)
+        baseScaleYField?.stringValue = formatNumber(layer.baseScaleY)
+        baseRotationField?.stringValue = formatNumber(layer.baseRotation)
         opacityField?.stringValue = formatNumber(evaluatedOpacity(for: layer, frame: playbackController.currentFrame) * 100)
         borderWidthField?.stringValue = formatNumber(evaluatedNumeric(for: layer, property: .borderWidth, frame: playbackController.currentFrame, defaultValue: layer.borderWidth))
 

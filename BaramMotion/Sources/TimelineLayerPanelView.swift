@@ -31,42 +31,36 @@ final class TimelineLayerPanelView: NSView {
             let l=layers[index]; let y=firstY-CGFloat(index)*rowHeight
             guard y+rowHeight >= 0 && y <= bounds.height else { continue }
             if l.id==selectedLayerID { NSColor.selectedContentBackgroundColor.withAlphaComponent(0.25).setFill(); NSRect(x:0,y:y,width:bounds.width-1,height:rowHeight).fill() }
-            let eyeRect=NSRect(x:8,y:y+8,width:18,height:18)
-            if let image=NSImage(systemSymbolName:l.isVisible ? "eye.fill":"eye.slash",accessibilityDescription:l.isVisible ? "表示":"非表示") {
-                drawSymbol(image, in: eyeRect, color: l.isVisible ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor)
+            let iconName = l.isVisible ? "eye.fill" : "eye.slash"
+            if let eye = NSImage(systemSymbolName: iconName, accessibilityDescription: l.isVisible ? "表示" : "非表示") {
+                eye.isTemplate = true
+                let target: CGFloat = 14
+                let source = eye.size
+                if source.width > 0 && source.height > 0 {
+                    let scale = min(target / source.width, target / source.height)
+                    let size = NSSize(width: source.width * scale, height: source.height * scale)
+                    eye.draw(in: NSRect(x: 10, y: y + (rowHeight-size.height)*0.5, width: size.width, height: size.height), from: .zero, operation: .sourceOver, fraction: 0.9)
+                }
             } else {
-                NSLog("[Baram Motion] ERROR: Missing visibility SF Symbol.")
+                NSLog("[Baram Motion] ERROR: Missing layer panel visibility SF Symbol: %@", iconName)
             }
-            let kindSymbol: String
-            switch l.kindDisplayName {
-            case "Text": kindSymbol = "textformat"
-            case "Rectangle": kindSymbol = "rectangle"
-            default: kindSymbol = "switch.2"
-            }
-            let kindRect = NSRect(x: 34, y: y + 8, width: 16, height: 18)
-            if let image = NSImage(systemSymbolName: kindSymbol, accessibilityDescription: l.kindDisplayName) {
-                image.isTemplate = true
-                image.draw(in: kindRect)
-            } else {
-                NSLog("[Baram Motion] ERROR: Missing SF Symbol: %@", kindSymbol)
-            }
-            NSString(string:l.name).draw(in:NSRect(x:50,y:y+7,width:bounds.width-58,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:l.id==selectedLayerID ? .semibold:.regular),.foregroundColor:NSColor.labelColor])
+            NSString(string:l.name).draw(in:NSRect(x:34,y:y+7,width:bounds.width-46,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:l.id==selectedLayerID ? .semibold:.regular),.foregroundColor:NSColor.labelColor])
         }
     }
 
-    private func drawSymbol(_ image: NSImage, in rect: NSRect, color: NSColor) {
-        guard rect.width > 0, rect.height > 0 else { NSLog("[Baram Motion] ERROR: Invalid layer icon rect."); return }
-        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
-        color.set()
-        rect.fill(using: .sourceAtop)
-    }
 
     override func mouseDown(with event:NSEvent) {
         let p=convert(event.locationInWindow,from:nil)
         guard let index=hitIndex(y:p.y) else{return}
         let l=layers[index]
-        if p.x <= 30 { delegate?.timelineLayerPanel(self,didToggleVisibility:l.id); return }
-        draggingID=l.id; delegate?.timelineLayerPanel(self,didSelectLayer:l.id); delegate?.timelineLayerPanel(self,didBeginMovingLayer:l.id)
+        if p.x < 30 {
+            delegate?.timelineLayerPanel(self,didToggleVisibility:l.id)
+            NSLog("[Baram Motion] Layer panel visibility clicked: %@", l.name)
+            return
+        }
+        draggingID=l.id
+        delegate?.timelineLayerPanel(self,didSelectLayer:l.id)
+        delegate?.timelineLayerPanel(self,didBeginMovingLayer:l.id)
     }
     override func mouseDragged(with event:NSEvent) {
         guard let id=draggingID else{return}

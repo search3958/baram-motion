@@ -1,18 +1,48 @@
-
 final class BaramMotionNumericField: NSTextField {
     var step: CGFloat = 1
     var minimum: CGFloat?
     var maximum: CGFloat?
+
+    private func commitAction(reason: String) {
+        guard let action else {
+            NSLog("[Baram Motion] WARNING: Numeric field has no action.")
+            return
+        }
+        guard let target else {
+            NSLog("[Baram Motion] WARNING: Numeric field has no target.")
+            return
+        }
+        let handled = NSApp.sendAction(action, to: target, from: self)
+        if handled {
+            NSLog("[Baram Motion] Numeric field committed (%@): %@", reason, stringValue)
+        } else {
+            NSLog("[Baram Motion] ERROR: Numeric field action was not handled: %@", NSStringFromSelector(action))
+        }
+    }
+
     override func scrollWheel(with event: NSEvent) {
-        guard !stringValue.isEmpty else { super.scrollWheel(with:event); return }
-        guard let current=Double(stringValue), current.isFinite else { super.scrollWheel(with:event); return }
+        guard !stringValue.isEmpty,
+              let current = Double(stringValue),
+              current.isFinite else {
+            super.scrollWheel(with: event)
+            return
+        }
         let direction = event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY
         guard abs(direction) > 0 else { return }
-        var next=CGFloat(current)+(direction > 0 ? step : -step)
-        if let minimum { next=max(minimum,next) }; if let maximum { next=min(maximum,next) }
-        stringValue=String(format:"%.3f",Double(next)).replacingOccurrences(of:#"\.?0+$"#,with:"",options:.regularExpression)
-        sendAction(action,to:target)
-        NSLog("[Baram Motion] Numeric wheel changed: %@", stringValue)
+        var next = CGFloat(current) + (direction > 0 ? step : -step)
+        if let minimum { next = max(minimum, next) }
+        if let maximum { next = min(maximum, next) }
+        stringValue = String(format: "%.3f", Double(next)).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+        commitAction(reason: "wheel")
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 36 || event.keyCode == 76 {
+            window?.endEditing(for: self)
+            commitAction(reason: "enter")
+            return
+        }
+        super.keyDown(with: event)
     }
 }
 
@@ -398,17 +428,85 @@ extension MainViewController {
         NSLog("[Baram Motion] Size property changed %@ frame=%d value=%.1f", property.rawValue, frame, value)
     }
 
+    @objc func baseTransformFieldChanged(_ sender: NSTextField) {
+        guard let layer = selectedLayer else {
+            NSLog("[Baram Motion] ERROR: No selected layer for base transform input.")
+            return
+        }
+        guard let rawValue = Double(sender.stringValue), rawValue.isFinite else {
+            NSLog("[Baram Motion] ERROR: Invalid base transform value: %@", sender.stringValue)
+            refreshInspectorValues()
+            return
+        }
+
+        let before = captureSnapshot()
+        if sender === baseScaleXField {
+            layer.baseScaleX = max(0.001, CGFloat(rawValue))
+        } else if sender === baseScaleYField {
+            layer.baseScaleY = max(0.001, CGFloat(rawValue))
+        } else if sender === baseRotationField {
+            layer.baseRotation = CGFloat(rawValue)
+        } else {
+            NSLog("[Baram Motion] ERROR: Unknown base transform field.")
+            return
+        }
+
+        finishMutation(before: before, actionName: "ベース変形値変更")
+        NSLog("[Baram Motion] Base transform changed: scaleX=%.3f scaleY=%.3f rotation=%.3f", Double(layer.baseScaleX), Double(layer.baseScaleY), Double(layer.baseRotation))
+    }
+
     @objc func transformFieldChanged(_ sender: NSTextField) {
-        guard let layer=selectedLayer else { NSLog("[Baram Motion] ERROR: No selected layer for transform input."); return }
+        guard let layer = selectedLayer else {
+            NSLog("[Baram Motion] ERROR: No selected layer for transform input.")
+            return
+        }
+
         let property: AnimatedProperty
-        if sender === scaleXField { property = .scaleX } else if sender === scaleYField { property = .scaleY } else if sender === rotationField { property = .rotation } else { NSLog("[Baram Motion] ERROR: Unknown transform field."); return }
-        guard let value=Double(sender.stringValue), value.isFinite else { refreshInspectorValues(); return }
-        let clamped = property == .scaleX || property == .scaleY ? max(0.001, CGFloat(value)) : CGFloat(value)
-        let frame=playbackController.currentFrame; let before=captureSnapshot()
-        if let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) { layer.propertyKeyframes[idx].scalar=clamped }
-        else if layer.propertyKeyframes.contains(where: { $0.property == property }) { layer.propertyKeyframes.append(.scalar(property,frame:frame,value:clamped)); normalizeKeyframes(layer) }
-        else { switch property { case .scaleX: if frame == 0 { /* base values are represented by a key when editing animated state */ }; layer.propertyKeyframes.append(.scalar(.scaleX,frame:frame,value:clamped)); case .scaleY: layer.propertyKeyframes.append(.scalar(.scaleY,frame:frame,value:clamped)); case .rotation: layer.propertyKeyframes.append(.scalar(.rotation,frame:frame,value:clamped)); default: break }; normalizeKeyframes(layer) }
-        finishMutation(before:before,actionName:"\(property.rawValue)変更"); refreshAll(); NSLog("[Baram Motion] Transform changed %@=%.3f frame=%d",property.rawValue,clamped,frame)
+        if sender === scaleXField {
+            property = .scaleX
+        } else if sender === scaleYField {
+            property = .scaleY
+        } else if sender === rotationField {
+            property = .rotation
+        } else {
+            NSLog("[Baram Motion] ERROR: Unknown transform field.")
+            return
+        }
+
+        guard let rawValue = Double(sender.stringValue), rawValue.isFinite else {
+            NSLog("[Baram Motion] ERROR: Invalid transform value: %@", sender.stringValue)
+            refreshInspectorValues()
+            return
+        }
+
+        let value = property == .scaleX || property == .scaleY
+            ? max(0.001, CGFloat(rawValue))
+            : CGFloat(rawValue)
+        let frame = playbackController.currentFrame
+        let before = captureSnapshot()
+
+        if let index = layer.propertyKeyframes.firstIndex(where: {
+            $0.property == property && $0.frame == frame
+        }) {
+            layer.propertyKeyframes[index].scalar = value
+        } else if layer.propertyKeyframes.contains(where: { $0.property == property }) {
+            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: value))
+            normalizeKeyframes(layer)
+        } else {
+            switch property {
+            case .scaleX:
+                layer.scaleX = value
+            case .scaleY:
+                layer.scaleY = value
+            case .rotation:
+                layer.rotation = value
+            default:
+                return
+            }
+        }
+
+        finishMutation(before: before, actionName: "\(property.rawValue)変更")
+        NSLog("[Baram Motion] Transform changed %@=%.3f frame=%d", property.rawValue, Double(value), frame)
     }
 
     @objc func opacityChanged(_ sender:NSTextField) {
@@ -775,6 +873,9 @@ extension MainViewController {
                 left.y != right.y ||
                 left.width != right.width ||
                 left.height != right.height ||
+                left.scaleX != right.scaleX ||
+                left.scaleY != right.scaleY ||
+                left.rotation != right.rotation ||
                 left.fontSize != right.fontSize ||
                 left.fontName != right.fontName ||
                 left.anchor != right.anchor ||

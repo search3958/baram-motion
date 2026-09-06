@@ -292,10 +292,11 @@ extension MainViewController: NSToolbarDelegate {
         static let rectangle = NSToolbarItem.Identifier("BaramMotion.Rectangle")
         static let toggle = NSToolbarItem.Identifier("BaramMotion.Toggle")
         static let export = NSToolbarItem.Identifier("BaramMotion.Export")
+        static let mp4 = NSToolbarItem.Identifier("BaramMotion.MP4Export")
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ToolbarItemID.undo, ToolbarItemID.redo, .flexibleSpace, ToolbarItemID.text, ToolbarItemID.rectangle, ToolbarItemID.toggle, .flexibleSpace, ToolbarItemID.export]
+        [ToolbarItemID.undo, ToolbarItemID.redo, .flexibleSpace, ToolbarItemID.text, ToolbarItemID.rectangle, ToolbarItemID.toggle, .flexibleSpace, ToolbarItemID.export, ToolbarItemID.mp4]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -318,6 +319,8 @@ extension MainViewController: NSToolbarDelegate {
             item.label = "Switch"; item.toolTip = "SwiftUI Switchを追加"; item.image = NSImage(systemSymbolName:"switch.2",accessibilityDescription:nil); item.action=#selector(addToggleLayer)
         case ToolbarItemID.export:
             item.label = "書き出し"; item.toolTip = "現在のフレームを書き出す"; item.image = NSImage(systemSymbolName:"square.and.arrow.down",accessibilityDescription:nil); item.action=#selector(exportCurrentFrame)
+        case ToolbarItemID.mp4:
+            item.label = "MP4"; item.toolTip = "タイムラインをH.264 MP4で書き出す"; item.image = NSImage(systemSymbolName:"film",accessibilityDescription:nil); item.action=#selector(exportMP4)
         default: return nil
         }
         return item

@@ -6,6 +6,7 @@ protocol TimelineContentViewDelegate: AnyObject {
     func timelineContentView(_ view: TimelineContentView, didChangeLayer id: UUID, startTime: CGFloat, duration: CGFloat)
     func timelineContentView(_ view: TimelineContentView, didFinishEditingLayer id: UUID)
     func timelineContentView(_ view: TimelineContentView, didRequestFrame frame: Int)
+    func timelineContentView(_ view: TimelineContentView, didToggleVisibility layerID: UUID)
     func timelineContentView(_ view: TimelineContentView, didRequestAddKeyframe layerID: UUID, frame: Int)
 }
 
@@ -69,9 +70,43 @@ final class TimelineContentView: NSView {
             layer.color.withAlphaComponent(layer.id==selectedLayerID ? 0.88:0.66).setFill()
             let path = NSBezierPath(roundedRect:rect,xRadius:6,yRadius:6); path.fill()
             if layer.id==selectedLayerID { NSColor.controlAccentColor.setStroke(); path.lineWidth = 2; path.stroke() }
-            NSString(string:layer.name).draw(in:rect.insetBy(dx:10,dy:6),withAttributes:[.font:NSFont.systemFont(ofSize:11,weight:layer.id==selectedLayerID ? .semibold:.medium),.foregroundColor:NSColor.white])
+            drawLayerKindIcon(for: layer, in: rect)
             for frame in layer.keyframeFrames { drawDiamond(atX:CGFloat(frame)/frameRate*timelineScale, centerY:y+rowHeight/2, selected:frame==currentFrame, context:ctx) }
         }
+    }
+
+    private func drawLayerKindIcon(for layer: MainViewController.LayerModelProxy, in rect: NSRect) {
+        let symbolName: String
+        switch layer.kindDisplayName {
+        case "Text": symbolName = "textformat"
+        case "Rectangle": symbolName = "rectangle"
+        case "Switch": symbolName = "switch.2"
+        default:
+            NSLog("[Baram Motion] WARNING: Unknown timeline layer kind: %@", layer.kindDisplayName)
+            return
+        }
+
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: layer.kindDisplayName) else {
+            NSLog("[Baram Motion] ERROR: Missing timeline kind SF Symbol: %@", symbolName)
+            return
+        }
+
+        image.isTemplate = true
+        let target: CGFloat = 15
+        let sourceSize = image.size
+        guard sourceSize.width > 0, sourceSize.height > 0 else {
+            NSLog("[Baram Motion] ERROR: Invalid timeline SF Symbol dimensions: %@", symbolName)
+            return
+        }
+        let scale = min(target / sourceSize.width, target / sourceSize.height)
+        let drawSize = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+        let drawRect = NSRect(
+            x: rect.minX + 6 + (target - drawSize.width) * 0.5,
+            y: rect.midY - drawSize.height * 0.5,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 0.95)
     }
 
     private func drawDiamond(atX x:CGFloat, centerY:CGFloat, selected:Bool, context:CGContext) {
@@ -113,6 +148,7 @@ final class TimelineContentView: NSView {
         selectedLayerID = hit.layer.id
         delegate?.timelineContentView(self,didSelectLayer:hit.layer.id)
         let localX = p.x-hit.rect.minX
+        // Visibility belongs to the fixed layer panel. The timeline row intentionally has no visibility control.
         if hit.rect.width >= 20 && localX <= edgeHitWidth { interaction = .resizeLeft }
         else if hit.rect.width >= 20 && localX >= hit.rect.width-edgeHitWidth { interaction = .resizeRight }
         else { interaction = .move }
