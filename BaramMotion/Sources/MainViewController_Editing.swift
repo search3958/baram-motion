@@ -36,9 +36,35 @@ final class BaramMotionNumericField: NSTextField {
         commitAction(reason: "wheel")
     }
 
+    override func textDidChange(_ notification: Notification) {
+        super.textDidChange(notification)
+
+        guard let changedField = notification.object as? NSTextField, changedField === self else {
+            NSLog("[Baram Motion] WARNING: Numeric field received an unrelated text-change notification.")
+            return
+        }
+
+        if let owner = target as? MainViewController, owner.isRefreshingInspectorValues {
+            NSLog("[Baram Motion] Numeric field change ignored during inspector refresh: %@", stringValue)
+            return
+        }
+
+        // Apply valid numeric input continuously while the user is typing.
+        // Invalid intermediate states such as an empty string are left alone so
+        // the user can finish typing without the inspector fighting the input.
+        guard let number = Double(stringValue), number.isFinite else {
+            return
+        }
+
+        commitAction(reason: "live")
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 || event.keyCode == 76 {
             window?.endEditing(for: self)
+            // textDidChange(_:) already commits valid input live. Keep this
+            // explicit commit for Enter so keyboard confirmation remains
+            // deterministic even when the text did not change.
             commitAction(reason: "enter")
             return
         }
@@ -429,35 +455,14 @@ extension MainViewController {
     }
 
     @objc func baseTransformFieldChanged(_ sender: NSTextField) {
-        guard let layer = selectedLayer else {
-            NSLog("[Baram Motion] ERROR: No selected layer for base transform input.")
-            return
-        }
-        guard let rawValue = Double(sender.stringValue), rawValue.isFinite else {
-            NSLog("[Baram Motion] ERROR: Invalid base transform value: %@", sender.stringValue)
-            refreshInspectorValues()
-            return
-        }
-
-        let before = captureSnapshot()
-        if sender === baseScaleXField {
-            layer.baseScaleX = max(0.001, CGFloat(rawValue))
-        } else if sender === baseScaleYField {
-            layer.baseScaleY = max(0.001, CGFloat(rawValue))
-        } else if sender === baseRotationField {
-            layer.baseRotation = CGFloat(rawValue)
-        } else {
-            NSLog("[Baram Motion] ERROR: Unknown base transform field.")
-            return
-        }
-
-        finishMutation(before: before, actionName: "ベース変形値変更")
-        NSLog("[Baram Motion] Base transform changed: scaleX=%.3f scaleY=%.3f rotation=%.3f", Double(layer.baseScaleX), Double(layer.baseScaleY), Double(layer.baseRotation))
+        // Backward-compatible entry point for older UI wiring. Persistent
+        // transform values are stored directly on LayerModel.
+        transformFieldChanged(sender)
     }
 
     @objc func transformFieldChanged(_ sender: NSTextField) {
         guard let layer = selectedLayer else {
-            NSLog("[Baram Motion] ERROR: No selected layer for transform input.")
+            NSLog("[Baram Motion] ERROR: No selected layer for persistent transform input.")
             return
         }
 
@@ -468,45 +473,58 @@ extension MainViewController {
             property = .scaleY
         } else if sender === rotationField {
             property = .rotation
+        } else if sender === baseScaleXField {
+            property = .scaleX
+        } else if sender === baseScaleYField {
+            property = .scaleY
+        } else if sender === baseRotationField {
+            property = .rotation
         } else {
-            NSLog("[Baram Motion] ERROR: Unknown transform field.")
+            NSLog("[Baram Motion] ERROR: Unknown persistent transform field.")
             return
         }
 
         guard let rawValue = Double(sender.stringValue), rawValue.isFinite else {
-            NSLog("[Baram Motion] ERROR: Invalid transform value: %@", sender.stringValue)
-            refreshInspectorValues()
+            NSLog("[Baram Motion] ERROR: Invalid persistent transform value: %@", sender.stringValue)
             return
         }
 
-        let value = property == .scaleX || property == .scaleY
-            ? max(0.001, CGFloat(rawValue))
-            : CGFloat(rawValue)
-        let frame = playbackController.currentFrame
+        let value = CGFloat(rawValue)
         let before = captureSnapshot()
-
-        if let index = layer.propertyKeyframes.firstIndex(where: {
-            $0.property == property && $0.frame == frame
-        }) {
-            layer.propertyKeyframes[index].scalar = value
-        } else if layer.propertyKeyframes.contains(where: { $0.property == property }) {
-            layer.propertyKeyframes.append(.scalar(property, frame: frame, value: value))
-            normalizeKeyframes(layer)
-        } else {
-            switch property {
-            case .scaleX:
-                layer.scaleX = value
-            case .scaleY:
-                layer.scaleY = value
-            case .rotation:
-                layer.rotation = value
-            default:
-                return
-            }
+        switch property {
+        case .scaleX:
+            layer.baseScaleX = max(0.001, value)
+        case .scaleY:
+            layer.baseScaleY = max(0.001, value)
+        case .rotation:
+            layer.baseRotation = value
+        default:
+            NSLog("[Baram Motion] ERROR: Unsupported persistent transform property: %@", property.rawValue)
+            return
         }
 
-        finishMutation(before: before, actionName: "\(property.rawValue)変更")
-        NSLog("[Baram Motion] Transform changed %@=%.3f frame=%d", property.rawValue, Double(value), frame)
+        // Never create a transform keyframe here. The persistent transform is
+        // evaluated on every frame and remains in effect while X/Y/size animate.
+        refreshPreview()
+        refreshKeyframeInspector()
+
+        if let window = view.window, window.firstResponder !== sender {
+            finishMutation(before: before, actionName: "\(property.rawValue)変更")
+        }
+
+        let evaluated = evaluatedTransform(for: layer, frame: playbackController.currentFrame)
+        NSLog(
+            "[Baram Motion] Persistent transform changed %@=%.3f frame=%d base=(scaleX=%.3f, scaleY=%.3f, rotation=%.3f) evaluated=(scaleX=%.3f, scaleY=%.3f, rotation=%.3f)",
+            property.rawValue,
+            Double(value),
+            playbackController.currentFrame,
+            Double(layer.baseScaleX),
+            Double(layer.baseScaleY),
+            Double(layer.baseRotation),
+            Double(evaluated.scaleX),
+            Double(evaluated.scaleY),
+            Double(evaluated.rotation)
+        )
     }
 
     @objc func opacityChanged(_ sender:NSTextField) {

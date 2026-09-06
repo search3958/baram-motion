@@ -99,7 +99,13 @@ extension MainViewController {
 
                 playbackController.setCurrentFrame(frame, notify: false)
                 refreshPreview()
+                previewView.layoutSubtreeIfNeeded()
                 previewView.displayIfNeeded()
+                previewElementViews.values.forEach {
+                    $0.layoutSubtreeIfNeeded()
+                    $0.applyFrameForExportIfNeeded()
+                    $0.displayIfNeeded()
+                }
 
                 guard let pixelBuffer = makeExportPixelBuffer(from: previewView, width: width, height: height) else {
                     NSLog("[Baram Motion] ERROR: Failed to create pixel buffer at frame %d.", frame)
@@ -148,28 +154,23 @@ extension MainViewController {
     }
 
     private func makeExportPixelBuffer(from view: NSView, width: Int, height: Int) -> CVPixelBuffer? {
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width,
-            height,
-            kCVPixelFormatType_32BGRA,
-            [
-                kCVPixelBufferCGImageCompatibilityKey: true,
-                kCVPixelBufferCGBitmapContextCompatibilityKey: true
-            ] as CFDictionary,
-            &pixelBuffer
-        )
-        guard status == kCVReturnSuccess, let pixelBuffer else {
-            NSLog("[Baram Motion] ERROR: CVPixelBufferCreate failed: %d", status)
+        guard let pngData = makeRenderedPNGData(from: view) else {
+            NSLog("[Baram Motion] ERROR: Failed to render preview frame before MP4 encoding.")
             return nil
         }
+        guard let image = NSImage(data: pngData) else {
+            NSLog("[Baram Motion] ERROR: Rendered PNG could not be decoded.")
+            return nil
+        }
+        guard let pixelBuffer = makePixelBuffer(width: width, height: height) else {
+            return nil
+        }
+
         guard CVPixelBufferLockBaseAddress(pixelBuffer, []) == kCVReturnSuccess else {
             NSLog("[Baram Motion] ERROR: CVPixelBufferLockBaseAddress failed.")
             return nil
         }
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-
         guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
             NSLog("[Baram Motion] ERROR: Pixel buffer base address is nil.")
             return nil
@@ -184,14 +185,111 @@ extension MainViewController {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else {
-            NSLog("[Baram Motion] ERROR: Could not create pixel buffer graphics context.")
+            NSLog("[Baram Motion] ERROR: Could not create MP4 pixel-buffer graphics context.")
             return nil
         }
 
-        context.setFillColor(NSColor.black.cgColor)
+        context.setFillColor(BaramMotionTheme.previewBackground.cgColor)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        view.layer?.render(in: context)
+
+        guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            NSLog("[Baram Motion] ERROR: Rendered PNG has no CGImage.")
+            return nil
+        }
+        context.interpolationQuality = .high
+        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
         return pixelBuffer
+    }
+
+    private func makePixelBuffer(width: Int, height: Int) -> CVPixelBuffer? {
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_32BGRA,
+            [
+                kCVPixelBufferCGImageCompatibilityKey as String: true,
+                kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
+            ] as CFDictionary,
+            &pixelBuffer
+        )
+        guard status == kCVReturnSuccess, let pixelBuffer else {
+            NSLog("[Baram Motion] ERROR: CVPixelBufferCreate failed: %d", status)
+            return nil
+        }
+        return pixelBuffer
+    }
+
+    private func makeRenderedPNGData(from view: NSView) -> Data? {
+        guard view.bounds.width > 0, view.bounds.height > 0 else {
+            NSLog("[Baram Motion] ERROR: Preview bounds are empty during frame rendering.")
+            return nil
+        }
+
+        // Render exactly one frame using the same AppKit view hierarchy used by
+        // the editor. This keeps all layers composited together. PDF rendering is
+        // used as the primary capture path because it recursively captures
+        // layer-backed NSViews and NSHostingView content more reliably than
+        // CALayer.render(in:) for this editor.
+        let pdfData = view.dataWithPDF(inside: view.bounds)
+        if !pdfData.isEmpty,
+           let provider = CGDataProvider(data: pdfData as CFData),
+           let document = CGPDFDocument(provider),
+           let page = document.page(at: 1) {
+            let box = page.getBoxRect(.mediaBox)
+            let width = max(1, Int(view.bounds.width.rounded()))
+            let height = max(1, Int(view.bounds.height.rounded()))
+            guard let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: width,
+                pixelsHigh: height,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bitmapFormat: [],
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ), let graphics = NSGraphicsContext(bitmapImageRep: rep) else {
+                NSLog("[Baram Motion] ERROR: Could not allocate PDF frame bitmap.")
+                return nil
+            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = graphics
+            graphics.cgContext.setFillColor(BaramMotionTheme.previewBackground.cgColor)
+            graphics.cgContext.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            let scale = min(CGFloat(width) / max(1, box.width), CGFloat(height) / max(1, box.height))
+            let drawWidth = box.width * scale
+            let drawHeight = box.height * scale
+            let drawRect = CGRect(x: (CGFloat(width) - drawWidth) * 0.5, y: (CGFloat(height) - drawHeight) * 0.5, width: drawWidth, height: drawHeight)
+            graphics.cgContext.saveGState()
+            graphics.cgContext.translateBy(x: drawRect.minX, y: drawRect.minY + drawRect.height)
+            graphics.cgContext.scaleBy(x: scale, y: -scale)
+            graphics.cgContext.translateBy(x: -box.minX, y: -box.minY)
+            graphics.cgContext.drawPDFPage(page)
+            graphics.cgContext.restoreGState()
+            graphics.flushGraphics()
+            NSGraphicsContext.restoreGraphicsState()
+            if let data = rep.representation(using: .png, properties: [:]) {
+                NSLog("[Baram Motion] PNG-style frame render succeeded via PDF, %.0f x %.0f", view.bounds.width, view.bounds.height)
+                return data
+            }
+        }
+
+        // Fallback for unusual AppKit configurations.
+        guard let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            NSLog("[Baram Motion] ERROR: Could not create fallback bitmap representation.")
+            return nil
+        }
+        view.cacheDisplay(in: view.bounds, to: representation)
+        guard let data = representation.representation(using: .png, properties: [:]) else {
+            NSLog("[Baram Motion] ERROR: Fallback PNG encoding failed.")
+            return nil
+        }
+        NSLog("[Baram Motion] PNG-style frame render succeeded via AppKit cache fallback.")
+        return data
     }
 
     private func removeExistingExportFile(at url: URL) -> Bool {

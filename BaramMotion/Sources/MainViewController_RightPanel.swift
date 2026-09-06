@@ -107,9 +107,6 @@ extension MainViewController {
         scaleXField = nil
         scaleYField = nil
         rotationField = nil
-        baseScaleXField = nil
-        baseScaleYField = nil
-        baseRotationField = nil
         opacityField = nil
         borderWidthField = nil
         switchWidthField = nil
@@ -227,21 +224,12 @@ extension MainViewController {
         addAnimatedNumericRow(stack: stack, title: "Y", fieldValue: evaluated.y, property: .y, action: #selector(positionFieldChanged(_:)), targetField: &yField, layer: layer)
         addAnimatedNumericRow(stack: stack, title: "幅", fieldValue: evaluated.width, property: .width, action: #selector(sizeFieldChanged(_:)), targetField: &widthField, layer: layer)
         addAnimatedNumericRow(stack: stack, title: "高さ", fieldValue: evaluated.height, property: .height, action: #selector(sizeFieldChanged(_:)), targetField: &heightField, layer: layer)
-        addAnimatedNumericRow(stack: stack, title: "Xスケール", fieldValue: evaluated.scaleX, property: .scaleX, action: #selector(transformFieldChanged(_:)), targetField: &scaleXField, layer: layer)
-        addAnimatedNumericRow(stack: stack, title: "Yスケール", fieldValue: evaluated.scaleY, property: .scaleY, action: #selector(transformFieldChanged(_:)), targetField: &scaleYField, layer: layer)
-        addAnimatedNumericRow(stack: stack, title: "角度", fieldValue: evaluated.rotation, property: .rotation, action: #selector(transformFieldChanged(_:)), targetField: &rotationField, layer: layer)
-
-        let baseScaleX = makeNumericField(layer.baseScaleX)
-        baseScaleX.target = self; baseScaleX.action = #selector(baseTransformFieldChanged(_:)); baseScaleX.minimum = 0.001; baseScaleXField = baseScaleX
-        stack.addArrangedSubview(makeInspectorRow(title: "Xスケール ベース", control: baseScaleX))
-
-        let baseScaleY = makeNumericField(layer.baseScaleY)
-        baseScaleY.target = self; baseScaleY.action = #selector(baseTransformFieldChanged(_:)); baseScaleY.minimum = 0.001; baseScaleYField = baseScaleY
-        stack.addArrangedSubview(makeInspectorRow(title: "Yスケール ベース", control: baseScaleY))
-
-        let baseRotation = makeNumericField(layer.baseRotation)
-        baseRotation.target = self; baseRotation.action = #selector(baseTransformFieldChanged(_:)); baseRotationField = baseRotation
-        stack.addArrangedSubview(makeInspectorRow(title: "角度 ベース", control: baseRotation))
+        // Persistent transforms: these values are the layer's permanent transform
+        // and are intentionally not keyed per frame. Position/size animation is
+        // evaluated on top of this transform.
+        addPersistentTransformRow(stack: stack, title: "Xスケール", value: layer.baseScaleX, minimum: 0.001, targetField: &scaleXField)
+        addPersistentTransformRow(stack: stack, title: "Yスケール", value: layer.baseScaleY, minimum: 0.001, targetField: &scaleYField)
+        addPersistentTransformRow(stack: stack, title: "角度", value: layer.baseRotation, minimum: nil, targetField: &rotationField)
         let cornerField = makeNumericField(evaluatedCornerRadius(for: layer, frame: playbackController.currentFrame))
         cornerField.target = self; cornerField.action = #selector(cornerRadiusChanged(_:)); cornerRadiusField = cornerField
         stack.addArrangedSubview(makeAnimatedRow(title: "角丸", control: cornerField, property: .cornerRadius, layer: layer))
@@ -411,6 +399,15 @@ extension MainViewController {
         keyframeButtons[property] = key
         row.addArrangedSubview(label); row.addArrangedSubview(control); row.addArrangedSubview(key)
         return row
+    }
+
+    func addPersistentTransformRow(stack: NSStackView, title: String, value: CGFloat, minimum: CGFloat?, targetField: inout NSTextField?) {
+        let field = makeNumericField(value)
+        field.target = self
+        field.action = #selector(transformFieldChanged(_:))
+        field.minimum = minimum
+        targetField = field
+        stack.addArrangedSubview(makeInspectorRow(title: title, control: field))
     }
 
     func addAnimatedNumericRow(stack: NSStackView, title: String, fieldValue: CGFloat, property: AnimatedProperty, action: Selector, targetField: inout NSTextField?, layer: LayerModel) {

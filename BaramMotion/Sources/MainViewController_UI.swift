@@ -300,7 +300,7 @@ extension MainViewController: NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ToolbarItemID.undo, ToolbarItemID.redo, .flexibleSpace, ToolbarItemID.text, ToolbarItemID.rectangle, ToolbarItemID.toggle, .flexibleSpace, ToolbarItemID.export]
+        [ToolbarItemID.undo, ToolbarItemID.redo, .flexibleSpace, ToolbarItemID.text, ToolbarItemID.rectangle, ToolbarItemID.toggle, .flexibleSpace, ToolbarItemID.export, ToolbarItemID.mp4]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {

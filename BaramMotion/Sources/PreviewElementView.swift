@@ -178,7 +178,37 @@ final class PreviewElementView: NSView {
 
     private func applyContinuousCornerRadius(){ guard let l=layer else{return}; l.cornerCurve = .continuous; l.cornerRadius=max(0,min(cornerRadius,min(bounds.width,bounds.height)*0.5)) }
     private func applyBorder(){ guard let l=layer else{return}; l.cornerCurve = .continuous; l.borderWidth = 0 }
-    private func applyPresentationTransform(){ layer?.setAffineTransform(CGAffineTransform(rotationAngle: rotation * .pi / 180).scaledBy(x:max(0.001,scaleX),y:max(0.001,scaleY))) }
+    private func applyPresentationTransform(){
+        guard let presentationLayer = layer else {
+            NSLog("[Baram Motion] ERROR: Preview element has no backing layer for transform: %@", layerID.uuidString)
+            return
+        }
+
+        let safeScaleX = max(0.001, scaleX)
+        let safeScaleY = max(0.001, scaleY)
+        let radians = rotation * .pi / 180
+        var transform = CGAffineTransform.identity
+        transform = transform.scaledBy(x: safeScaleX, y: safeScaleY)
+        transform = transform.rotated(by: radians)
+
+        // Apply immediately and synchronously; implicit animations would make the
+        // inspector/playback appear one or more frames behind the model.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        presentationLayer.setAffineTransform(transform)
+        CATransaction.commit()
+        needsDisplay = true
+        NSLog("[Baram Motion] Presentation transform applied: layer=%@ scaleX=%.3f scaleY=%.3f rotation=%.3f",
+              layerID.uuidString, Double(safeScaleX), Double(safeScaleY), Double(rotation))
+    }
+    func applyFrameForExportIfNeeded() {
+        // Reapply without animation immediately before a frame is captured.
+        // This guarantees the exported bitmap sees the exact transform used in
+        // the editor, even when Core Animation has not committed a previous change.
+        applyPresentationTransform()
+        needsDisplay = true
+    }
+
     func updateAppearance(selected:Bool){ layer?.borderWidth = selected ? 2 : 0; layer?.borderColor = selected ? NSColor.controlAccentColor.cgColor : nil }
 
     private func makeSwitchView()->PreviewSwitchView{ PreviewSwitchView(isOn:Binding(get:{[weak self] in self?.isOn ?? false},set:{[weak self] v in guard let self else{return}; self.isOn=v; self.onToggleChanged?(self.layerID,v)}),tint:switchTint,onSelect:{[weak self] in self?.onSelect?(self!.layerID)},onBeginMove:{[weak self] in self?.onBeginMove?(self!.layerID)},onMove:{[weak self] d in self?.onMove?(self!.layerID,d)},onEndMove:{[weak self] in self?.onEndMove?(self!.layerID)}) }

@@ -39,6 +39,10 @@ extension MainViewController {
     }
 
     func toggleKeyframe(property: AnimatedProperty, layer: LayerModel, frame: Int) {
+        if property == .scaleX || property == .scaleY || property == .rotation {
+            NSLog("[Baram Motion] INFO: %@ is a persistent transform and is not keyframe-animated (frame=%d).", property.rawValue, frame)
+            return
+        }
         if let idx = layer.propertyKeyframes.firstIndex(where: { $0.frame == frame && $0.property == property }) { layer.propertyKeyframes.remove(at: idx); return }
         switch property {
         case .x, .y, .width, .height, .scaleX, .scaleY, .rotation, .opacity, .borderWidth:
@@ -74,10 +78,26 @@ extension MainViewController {
     }
 
     func normalizeKeyframes(_ layer: LayerModel) {
-        layer.propertyKeyframes.sort { $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame }
+        // Scale X/Y and rotation are persistent layer transforms, not per-frame
+        // animation channels. Remove legacy keyframes created by older builds so
+        // they cannot fight the persistent transform model.
+        let beforeCount = layer.propertyKeyframes.count
+        layer.propertyKeyframes.removeAll {
+            $0.property == .scaleX || $0.property == .scaleY || $0.property == .rotation
+        }
+        layer.propertyKeyframes.sort {
+            $0.frame == $1.frame ? $0.property.rawValue < $1.property.rawValue : $0.frame < $1.frame
+        }
+        if layer.propertyKeyframes.count != beforeCount {
+            NSLog("[Baram Motion] Removed %d legacy persistent-transform keyframes from %@", beforeCount - layer.propertyKeyframes.count, layer.name)
+        }
     }
 
     func moveGraphKeyframe(layerID: UUID, property: AnimatedProperty, fromFrame: Int, toFrame: Int, value: CGFloat?) {
+        if property == .scaleX || property == .scaleY || property == .rotation {
+            NSLog("[Baram Motion] INFO: Ignored graph move for persistent transform: %@", property.rawValue)
+            return
+        }
         guard let layer = layers.first(where: { $0.id == layerID }), let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == fromFrame }) else { return }
         let target = max(0, min(totalPlaybackFrames, toFrame))
         guard !layer.propertyKeyframes.contains(where: { $0.property == property && $0.frame == target && $0.frame != fromFrame }) else { return }
@@ -122,6 +142,10 @@ extension MainViewController: KeyframeGraphViewDelegate {
     }
 
     func keyframeGraph(_ graph: KeyframeGraphView, didDeleteKeyframeAt layerID: UUID, property: AnimatedProperty, frame: Int) {
+        guard property != .scaleX, property != .scaleY, property != .rotation else {
+            NSLog("[Baram Motion] INFO: Persistent transform keyframe deletion ignored: %@", property.rawValue)
+            return
+        }
         guard let layer = layers.first(where: { $0.id == layerID }) else { return }
         guard let idx = layer.propertyKeyframes.firstIndex(where: { $0.property == property && $0.frame == frame }) else { return }
         let before = captureSnapshot()
@@ -132,6 +156,10 @@ extension MainViewController: KeyframeGraphViewDelegate {
     }
 
     func keyframeGraph(_ graph: KeyframeGraphView, didAddKeyframeFor property: AnimatedProperty, at frame: Int) {
+        guard property != .scaleX, property != .scaleY, property != .rotation else {
+            NSLog("[Baram Motion] INFO: Persistent transform keyframe creation ignored: %@", property.rawValue)
+            return
+        }
         guard let layer=selectedLayer else { return }
         let before=captureSnapshot(); toggleKeyframe(property:property, layer:layer, frame:frame); selectedGraphProperty=property; selectedGraphFrame=frame; playbackFrameChanged(frame); finishMutation(before:before,actionName:"グラフからキーフレーム追加"); refreshAll()
     }

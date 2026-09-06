@@ -81,6 +81,9 @@ final class MainViewController: NSViewController {
     var toolbarConfigured = false
 
     var isRestoringUndoState = false
+    /// True while inspector controls are being populated from the model.
+    /// Numeric-field text notifications must not write those display updates back into the model.
+    var isRefreshingInspectorValues = false
 
     var timelineEditBeforeSnapshot:
         [UUID: LayerSnapshot] = [:]

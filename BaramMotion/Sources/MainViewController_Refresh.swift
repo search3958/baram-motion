@@ -45,14 +45,18 @@ extension MainViewController {
     }
 
     func evaluatedTransform(for layer: LayerModel, frame: Int) -> TransformValue {
+        // Scale X/Y and rotation are persistent base transforms. They are applied
+        // to every frame, while position and size may be animated independently.
+        // This prevents frame-by-frame transform keyframes from resetting or
+        // replacing the layer's permanent transform.
         TransformValue(
             x: evaluatedNumeric(for: layer, property: .x, frame: frame, defaultValue: layer.x),
             y: evaluatedNumeric(for: layer, property: .y, frame: frame, defaultValue: layer.y),
             width: max(1, evaluatedNumeric(for: layer, property: .width, frame: frame, defaultValue: layer.width)),
             height: max(1, evaluatedNumeric(for: layer, property: .height, frame: frame, defaultValue: layer.height)),
-            scaleX: max(0.001, evaluatedNumeric(for: layer, property: .scaleX, frame: frame, defaultValue: layer.scaleX)),
-            scaleY: max(0.001, evaluatedNumeric(for: layer, property: .scaleY, frame: frame, defaultValue: layer.scaleY)),
-            rotation: evaluatedNumeric(for: layer, property: .rotation, frame: frame, defaultValue: layer.rotation)
+            scaleX: max(0.001, layer.baseScaleX),
+            scaleY: max(0.001, layer.baseScaleY),
+            rotation: layer.baseRotation
         )
     }
 
@@ -187,6 +191,9 @@ extension MainViewController {
     // MARK: - Inspector Refresh
 
     func refreshInspectorValues() {
+
+        isRefreshingInspectorValues = true
+        defer { isRefreshingInspectorValues = false }
 
         guard let layer =
                 selectedLayer else {
